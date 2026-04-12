@@ -1,0 +1,156 @@
+{
+  "entities": {
+    "User": {
+      "title": "User Profile",
+      "description": "User profile information",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string", "description": "Unique user ID from Firebase Auth" },
+        "email": { "type": "string", "format": "email", "description": "User email address" },
+        "displayName": { "type": "string", "description": "User display name" },
+        "photoURL": { "type": "string", "format": "uri", "description": "User profile picture URL" },
+        "role": { "type": "string", "enum": ["user", "pro", "admin"], "description": "User role" },
+        "createdAt": { "type": "string", "format": "date-time", "description": "Account creation timestamp" }
+      },
+      "required": ["uid", "email", "role"]
+    },
+    "Project": {
+      "title": "User Project",
+      "description": "Image editing project metadata and results",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "description": "Unique project ID" },
+        "uid": { "type": "string", "description": "Owner user ID" },
+        "name": { "type": "string", "description": "Project or file name" },
+        "date": { "type": "string", "format": "date-time", "description": "Creation date" },
+        "status": { "type": "string", "enum": ["Finalizado", "Em Nuvem"], "description": "Project status" },
+        "type": { "type": "string", "description": "Type of edit performed" },
+        "imageUrl": { "type": "string", "format": "uri", "description": "URL of the processed image" }
+      },
+      "required": ["id", "uid", "name", "date", "status", "type", "imageUrl"]
+    },
+    "Notification": {
+      "title": "User Notification",
+      "description": "System notifications for the user",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "description": "Unique notification ID" },
+        "uid": { "type": "string", "description": "Recipient user ID" },
+        "title": { "type": "string", "description": "Notification title" },
+        "message": { "type": "string", "description": "Notification message" },
+        "time": { "type": "string", "description": "Relative or absolute time" },
+        "type": { "type": "string", "enum": ["success", "info", "warning"], "description": "Notification type" },
+        "isRead": { "type": "boolean", "description": "Whether the notification has been read" }
+      },
+      "required": ["id", "uid", "title", "message", "time", "type", "isRead"]
+    },
+    "AppConfig": {
+      "title": "App Branding Configuration",
+      "description": "Global application branding settings",
+      "type": "object",
+      "properties": {
+        "logoUrl": { "type": "string", "format": "uri", "description": "URL of the app logo" },
+        "faviconUrl": { "type": "string", "format": "uri", "description": "URL of the app favicon" },
+        "appName": { "type": "string", "description": "Application name" }
+      }
+    },
+    "MonetizationSettings": {
+      "title": "Monetization Settings",
+      "description": "Global monetization settings for AdSense and affiliate links",
+      "type": "object",
+      "properties": {
+        "adsenseClientId": { "type": "string", "description": "Google AdSense Client ID" },
+        "adsenseSlotId": { "type": "string", "description": "Google AdSense Slot ID" },
+        "adsenseEnabled": { "type": "boolean", "description": "Whether AdSense is enabled" },
+        "affiliateLinks": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": { "type": "string" },
+              "title": { "type": "string" },
+              "url": { "type": "string", "format": "uri" },
+              "imageUrl": { "type": "string", "format": "uri" },
+              "videoUrl": { "type": "string", "format": "uri" },
+              "type": { "type": "string", "enum": ["image", "video"] },
+              "active": { "type": "boolean" }
+            }
+          }
+        }
+      }
+    },
+    "Feedback": {
+      "title": "User Feedback",
+      "description": "Suggestions or contact requests from users",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string" },
+        "email": { "type": "string", "format": "email" },
+        "phone": { "type": "string" },
+        "message": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["name", "email", "message"]
+    },
+    "FooterSettings": {
+      "title": "Footer Configuration",
+      "description": "Global footer settings for contact and legal links",
+      "type": "object",
+      "properties": {
+        "adminEmail": { "type": "string", "format": "email" },
+        "contactPhone": { "type": "string" },
+        "websiteUrl": { "type": "string", "format": "uri" },
+        "instagramUrl": { "type": "string", "format": "uri" },
+        "twitterUrl": { "type": "string", "format": "uri" },
+        "githubUrl": { "type": "string", "format": "uri" },
+        "description": { "type": "string" },
+        "privacyPolicyUrl": { "type": "string", "format": "uri" },
+        "termsConditionsUrl": { "type": "string", "format": "uri" }
+      }
+    },
+    "NewsletterSubscription": {
+      "title": "Newsletter Subscription",
+      "description": "User email for newsletter subscription",
+      "type": "object",
+      "properties": {
+        "email": { "type": "string", "format": "email" },
+        "subscribedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["email", "subscribedAt"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": "User",
+      "description": "Stores user profile data"
+    },
+    "/projects/{projectId}": {
+      "schema": "Project",
+      "description": "Stores user image editing projects"
+    },
+    "/notifications/{notificationId}": {
+      "schema": "Notification",
+      "description": "Stores user system notifications"
+    },
+    "/config/branding": {
+      "schema": "AppConfig",
+      "description": "Stores global app branding settings"
+    },
+    "/config/monetization": {
+      "schema": "MonetizationSettings",
+      "description": "Stores global monetization settings"
+    },
+    "/feedback/{feedbackId}": {
+      "schema": "Feedback",
+      "description": "Stores user suggestions and contact requests"
+    },
+    "/config/footer": {
+      "schema": "FooterSettings",
+      "description": "Stores global footer settings"
+    },
+    "/newsletter/{email}": {
+      "schema": "NewsletterSubscription",
+      "description": "Stores newsletter subscriptions"
+    }
+  }
+}

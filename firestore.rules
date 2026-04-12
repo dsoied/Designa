@@ -1,0 +1,227 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ===============================================================
+    // Assumed Data Model
+    // ===============================================================
+    //
+    // Collection: users
+    // Document ID: {userId}
+    // Fields:
+    //   - uid: string (required, immutable) - Unique user ID from Firebase Auth
+    //   - email: string (required, immutable) - User email address
+    //   - displayName: string (optional) - User display name
+    //   - photoURL: string (optional, url) - User profile picture URL
+    //   - role: string (required, enum: ['user', 'admin']) - User role
+    //   - createdAt: timestamp (required, immutable) - Account creation timestamp
+    //
+    // Collection: usage
+    // Document ID: {userId}
+    // Fields:
+    //   - dailyCount: number
+    //   - lastReset: timestamp
+    //
+    // Collection: config
+    // Document ID: monetization
+    // Fields:
+    //   - adsenseClientId: string
+    //   - adsenseSlotId: string
+    //   - adsenseEnabled: bool
+    //   - affiliateLinks: list (objects with id, title, url, imageUrl, videoUrl, type, active)
+    //
+    // Document ID: footer
+    // Fields:
+    //   - adminEmail: string
+    //   - contactPhone: string
+    //   - websiteUrl: string
+    //   - instagramUrl: string
+    //   - twitterUrl: string
+    //   - githubUrl: string
+    //   - description: string
+    //   - privacyPolicyUrl: string
+    //   - termsConditionsUrl: string
+    //
+    // Collection: feedback
+    // Document ID: {feedbackId}
+    // Fields:
+    //   - name: string
+    //   - email: string
+    //   - phone: string
+    //   - message: string
+    //   - createdAt: timestamp
+    //
+    // ===============================================================
+
+    // ===============================================================
+    // Helper Functions
+    // ===============================================================
+    
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+
+    function isAdmin() {
+      return isAuthenticated() && 
+        request.auth.token.email == "dissooquevemdepois@gmail.com";
+    }
+
+    function hasRequiredFields(fields) {
+      return request.resource.data.keys().hasAll(fields);
+    }
+
+    function hasOnlyAllowedFields(fields) {
+      return request.resource.data.keys().hasOnly(fields);
+    }
+
+    function isValidEmail(email) {
+      return email is string && email.matches("^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,}$");
+    }
+
+    function isValidUrl(url) {
+      return url is string && (url.matches("^https://.*") || url.matches("^http://.*"));
+    }
+
+    // ===============================================================
+    // Domain Validators
+    // ===============================================================
+
+    function isValidUser(data) {
+      return hasRequiredFields(['uid', 'email', 'role']) &&
+             hasOnlyAllowedFields(['uid', 'email', 'displayName', 'photoURL', 'role', 'createdAt']) &&
+             data.uid is string && data.uid.size() > 0 &&
+             data.email is string && isValidEmail(data.email) &&
+             data.role in ['user', 'pro', 'admin'] &&
+             (!('displayName' in data) || (data.displayName is string && data.displayName.size() < 100)) &&
+             (!('photoURL' in data) || isValidUrl(data.photoURL));
+    }
+
+    function isValidProject(data) {
+      return hasRequiredFields(['id', 'uid', 'name', 'date', 'status', 'type', 'imageUrl']) &&
+             hasOnlyAllowedFields(['id', 'uid', 'name', 'date', 'status', 'type', 'imageUrl', 'createdAt']) &&
+             data.id is string &&
+             data.uid is string && data.uid == request.auth.uid &&
+             data.name is string && data.name.size() > 0 &&
+             data.date is string &&
+             data.status in ['Finalizado', 'Em Nuvem'] &&
+             data.type is string &&
+             isValidUrl(data.imageUrl);
+    }
+
+    function isValidNotification(data) {
+      return hasRequiredFields(['id', 'uid', 'title', 'message', 'time', 'type', 'isRead']) &&
+             hasOnlyAllowedFields(['id', 'uid', 'title', 'message', 'time', 'type', 'isRead', 'createdAt']) &&
+             data.id is string &&
+             data.uid is string && data.uid == request.auth.uid &&
+             data.title is string &&
+             data.message is string &&
+             data.time is string &&
+             data.type in ['success', 'info', 'warning'] &&
+             data.isRead is bool;
+    }
+
+    function isValidMonetization(data) {
+      return hasOnlyAllowedFields(['adsenseClientId', 'adsenseSlotId', 'adsenseEnabled', 'affiliateLinks']) &&
+             (!('adsenseClientId' in data) || data.adsenseClientId is string) &&
+             (!('adsenseSlotId' in data) || data.adsenseSlotId is string) &&
+             (!('adsenseEnabled' in data) || data.adsenseEnabled is bool) &&
+             (!('affiliateLinks' in data) || data.affiliateLinks is list);
+    }
+
+    function isValidFooter(data) {
+      return hasOnlyAllowedFields(['adminEmail', 'contactPhone', 'websiteUrl', 'instagramUrl', 'twitterUrl', 'githubUrl', 'description', 'privacyPolicyUrl', 'termsConditionsUrl']) &&
+             (!('adminEmail' in data) || (data.adminEmail is string && isValidEmail(data.adminEmail))) &&
+             (!('contactPhone' in data) || data.contactPhone is string) &&
+             (!('websiteUrl' in data) || data.websiteUrl is string) &&
+             (!('instagramUrl' in data) || data.instagramUrl is string) &&
+             (!('twitterUrl' in data) || data.twitterUrl is string) &&
+             (!('githubUrl' in data) || data.githubUrl is string) &&
+             (!('description' in data) || data.description is string) &&
+             (!('privacyPolicyUrl' in data) || data.privacyPolicyUrl is string) &&
+             (!('termsConditionsUrl' in data) || data.termsConditionsUrl is string);
+    }
+
+    function isValidFeedback(data) {
+      return hasRequiredFields(['name', 'email', 'message']) &&
+             hasOnlyAllowedFields(['name', 'email', 'phone', 'message', 'createdAt']) &&
+             data.name is string && data.name.size() > 0 && data.name.size() < 100 &&
+             data.email is string && isValidEmail(data.email) &&
+             (!('phone' in data) || (data.phone is string && data.phone.size() < 20)) &&
+             data.message is string && data.message.size() > 0 && data.message.size() < 2000;
+    }
+
+    function isValidNewsletter(data) {
+      return hasRequiredFields(['email', 'subscribedAt']) &&
+             hasOnlyAllowedFields(['email', 'subscribedAt']) &&
+             data.email is string && isValidEmail(data.email) &&
+             data.subscribedAt is string;
+    }
+
+    // ===============================================================
+    // Rules
+    // ===============================================================
+
+    match /users/{userId} {
+      // Users can only read their own profile, unless they are admin
+      allow read: if isOwner(userId) || isAdmin();
+      
+      // Create: user must be the owner, role must be 'user' (unless admin), and data must be valid
+      allow create: if isAuthenticated() && isOwner(userId) && isValidUser(request.resource.data) &&
+                    (request.resource.data.role == 'user' || isAdmin());
+      
+      // Update: user must be the owner, role can be updated to 'pro' if they are already 'user'
+      allow update: if isAuthenticated() && isOwner(userId) && isValidUser(request.resource.data) &&
+                    (request.resource.data.role == resource.data.role || 
+                     (resource.data.role == 'user' && request.resource.data.role == 'pro') || 
+                     isAdmin()) &&
+                    request.resource.data.uid == resource.data.uid &&
+                    request.resource.data.email == resource.data.email;
+      
+      // Delete: only admin can delete users
+      allow delete: if isAdmin();
+    }
+
+    match /projects/{projectId} {
+      allow read: if isAuthenticated() && (resource.data.uid == request.auth.uid || isAdmin());
+      allow create: if isAuthenticated() && isValidProject(request.resource.data);
+      allow update: if isAuthenticated() && (resource.data.uid == request.auth.uid || isAdmin()) && isValidProject(request.resource.data);
+      allow delete: if isAuthenticated() && (resource.data.uid == request.auth.uid || isAdmin());
+    }
+
+    match /notifications/{notificationId} {
+      allow read: if isAuthenticated() && (resource.data.uid == request.auth.uid || isAdmin());
+      allow create: if isAuthenticated() && isValidNotification(request.resource.data);
+      allow update: if isAuthenticated() && (resource.data.uid == request.auth.uid || isAdmin()) && isValidNotification(request.resource.data);
+      allow delete: if isAuthenticated() && (resource.data.uid == request.auth.uid || isAdmin());
+    }
+
+    match /config/{document} {
+      allow read: if true;
+      allow write: if isAdmin() && (
+        (document == 'monetization' && isValidMonetization(request.resource.data)) ||
+        (document == 'footer' && isValidFooter(request.resource.data)) ||
+        (document == 'branding')
+      );
+    }
+
+    match /feedback/{feedbackId} {
+      allow create: if isValidFeedback(request.resource.data);
+      allow read, delete: if isAdmin();
+    }
+
+    match /usage/{userId} {
+      allow read: if isOwner(userId) || isAdmin();
+      allow create: if isOwner(userId) && isAuthenticated();
+      allow update: if isOwner(userId) && isAuthenticated();
+    }
+
+    match /newsletter/{email} {
+      allow create: if isValidNewsletter(request.resource.data);
+      allow read, delete: if isAdmin();
+    }
+  }
+}
