@@ -14,11 +14,13 @@ import {
   ArrowRight,
   DollarSign,
   Layout as LayoutIcon,
-  Palette as PaletteIcon
+  Palette as PaletteIcon,
+  Activity
 } from 'lucide-react';
 import Monetization from './Monetization';
 import { FooterManagement } from './FooterManagement';
 import { NewsletterList } from './NewsletterList';
+import { AnalyticsDashboard } from './AnalyticsDashboard';
 import { db, auth } from '../firebase';
 import { 
   collection, 
@@ -47,7 +49,7 @@ export default function AdminDashboard() {
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedUser, setSelectedUser] = useState<UserData | null>(null);
   const [isUpdating, setIsUpdating] = useState(false);
-  const [activeTab, setActiveTab] = useState<'users' | 'monetization' | 'footer' | 'newsletter'>('users');
+  const [activeTab, setActiveTab] = useState<'users' | 'monetization' | 'footer' | 'newsletter' | 'analytics'>('analytics');
 
   const isOwner = auth.currentUser?.email === 'dissooquevemdepois@gmail.com';
 
@@ -156,6 +158,13 @@ export default function AdminDashboard() {
           >
             <Users size={18} />
             Usuários
+          </button>
+          <button 
+            onClick={() => setActiveTab('analytics')}
+            className={`px-6 py-2.5 rounded-xl text-sm font-bold transition-all flex items-center gap-2 ${activeTab === 'analytics' ? 'bg-white text-indigo-600 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}
+          >
+            <Activity size={18} />
+            Analytics
           </button>
           {isOwner && (
             <>
@@ -363,6 +372,13 @@ export default function AdminDashboard() {
           animate={{ opacity: 1, x: 0 }}
         >
           <FooterManagement />
+        </motion.div>
+      ) : activeTab === 'analytics' ? (
+        <motion.div
+          initial={{ opacity: 0, x: 20 }}
+          animate={{ opacity: 1, x: 0 }}
+        >
+          <AnalyticsDashboard />
         </motion.div>
       ) : (
         <motion.div

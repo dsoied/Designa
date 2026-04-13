@@ -12,9 +12,12 @@ interface EditorProps {
   initialTool?: 'background' | 'object' | 'upscale' | 'face' | 'filters' | 'crop' | 'layers' | 'magic' | 'outpaint' | 'variations';
   userRole?: string;
   onOpenPricing?: () => void;
+  notify?: (title: string, message: string, type?: 'success' | 'error' | 'info') => void;
 }
 
-export function Editor({ imageUrl, onNavigate, initialTool = 'background', userRole, onOpenPricing }: EditorProps) {
+import { trackImageProcessed } from '../services/analyticsService';
+
+export function Editor({ imageUrl, onNavigate, initialTool = 'background', userRole, onOpenPricing, notify }: EditorProps) {
   console.log('Editor: Renderizando. imageUrl:', imageUrl ? 'presente (tamanho: ' + imageUrl.length + ')' : 'ausente');
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [brushSize, setBrushSize] = useState(24);
@@ -218,7 +221,7 @@ export function Editor({ imageUrl, onNavigate, initialTool = 'background', userR
           if (items[i].type.indexOf('image') !== -1) {
             const blob = items[i].getAsFile();
             if (blob) {
-              const maxSize = (userRole === 'pro' || userRole === 'admin') ? 20 * 1024 * 1024 : 2 * 1024 * 1024;
+              const maxSize = (userRole === 'pro' || userRole === 'admin') ? 20 * 1024 * 1024 : 10 * 1024 * 1024;
               if (blob.size > maxSize) {
                 console.log(`Editor: Imagem colada excede o limite de ${maxSize / 1024 / 1024}MB`);
                 onOpenPricing?.();
@@ -247,6 +250,17 @@ export function Editor({ imageUrl, onNavigate, initialTool = 'background', userR
 
   const handleApplyChanges = async (isRetry = false) => {
     if (!displayImage) return;
+
+    // Auth check
+    if (!auth.currentUser) {
+      if (notify) {
+        notify('Acesso Restrito', 'Você precisa estar logado para processar imagens com IA.', 'error');
+      } else {
+        alert("Você precisa estar logado para processar imagens com IA.");
+      }
+      onNavigate?.('signup');
+      return;
+    }
 
     // Usage check for free users
     const usage = await usageService.checkUsage(userRole || 'free');
@@ -532,6 +546,7 @@ export function Editor({ imageUrl, onNavigate, initialTool = 'background', userR
             setProcessedImage(resultUrl);
             setViewMode('compare');
             addToHistory(resultUrl);
+            trackImageProcessed(activeTool);
             foundImage = true;
             console.log('Editor: Sucesso! Imagem recebida.');
 
@@ -599,9 +614,17 @@ export function Editor({ imageUrl, onNavigate, initialTool = 'background', userR
       if (!foundImage) {
         const textResponse = response.text;
         console.warn('Editor: IA não enviou imagem. Resposta:', textResponse);
-        alert(`A IA não enviou uma imagem de retorno. Resposta da IA: ${textResponse || 'Sem resposta detalhada.'}`);
+        if (notify) {
+          notify('Erro da IA', `A IA não enviou uma imagem de retorno. Resposta: ${textResponse || 'Sem detalhes.'}`, 'error');
+        } else {
+          alert(`A IA não enviou uma imagem de retorno. Resposta da IA: ${textResponse || 'Sem resposta detalhada.'}`);
+        }
       } else {
-        alert('Alterações aplicadas com sucesso! Agora você pode comparar com a original.');
+        if (notify) {
+          notify('Sucesso', 'Alterações aplicadas com sucesso! Agora você pode comparar com a original.', 'success');
+        } else {
+          alert('Alterações aplicadas com sucesso! Agora você pode comparar com a original.');
+        }
       }
 
     } catch (error: any) {
@@ -627,7 +650,11 @@ export function Editor({ imageUrl, onNavigate, initialTool = 'background', userR
         setKeyPromptReason('quota-exceeded');
         setShowKeyPrompt(true);
       } else {
-        alert('Ocorreu um erro ao processar a imagem. O servidor pode estar instável ou a imagem é muito grande. Tente novamente em instantes.');
+        if (notify) {
+          notify('Erro de Processamento', 'Ocorreu um erro ao processar a imagem. O servidor pode estar instável ou a imagem é muito grande. Tente novamente em instantes.', 'error');
+        } else {
+          alert('Ocorreu um erro ao processar a imagem. O servidor pode estar instável ou a imagem é muito grande. Tente novamente em instantes.');
+        }
       }
     } finally {
       setIsProcessing(false);
@@ -652,18 +679,32 @@ export function Editor({ imageUrl, onNavigate, initialTool = 'background', userR
 
   const processFile = (file: File) => {
     if (!file.type.startsWith('image/')) {
-      alert('Por favor, selecione apenas arquivos de imagem.');
+      if (notify) {
+        notify('Erro de Arquivo', 'Por favor, selecione apenas arquivos de imagem.', 'error');
+      } else {
+        alert('Por favor, selecione apenas arquivos de imagem.');
+      }
       return;
     }
 
-    // Free user limit: 2MB, Pro/Admin: 20MB
-    const limit = (userRole === 'pro' || userRole === 'admin') ? 20 * 1024 * 1024 : 2 * 1024 * 1024;
+    // Free user limit: 10MB, Pro/Admin: 20MB
+    const limit = (userRole === 'pro' || userRole === 'admin') ? 20 * 1024 * 1024 : 10 * 1024 * 1024;
     if (file.size > limit) {
       if (userRole !== 'pro' && userRole !== 'admin') {
-        alert('O arquivo é muito grande para o plano gratuito (limite 2MB). Faça upgrade para Pro para enviar arquivos de até 20MB.');
+        const msg = 'O arquivo é muito grande para o plano gratuito (limite 10MB). Faça upgrade para Pro para enviar arquivos de até 20MB.';
+        if (notify) {
+          notify('Limite Excedido', msg, 'error');
+        } else {
+          alert(msg);
+        }
         onOpenPricing?.();
       } else {
-        alert('O arquivo excede o limite de 20MB.');
+        const msg = 'O arquivo excede o limite de 20MB.';
+        if (notify) {
+          notify('Erro de Tamanho', msg, 'error');
+        } else {
+          alert(msg);
+        }
       }
       return;
     }
@@ -671,12 +712,20 @@ export function Editor({ imageUrl, onNavigate, initialTool = 'background', userR
     const reader = new FileReader();
     reader.onload = (e) => {
       const imageData = e.target?.result as string;
-      console.log('Editor: Nova imagem carregada');
-      onNavigate?.('editor', imageData);
+      console.log('Editor: Nova imagem carregada (tamanho:', imageData.length, ')');
+      try {
+        onNavigate?.('editor', imageData);
+      } catch (err) {
+        console.error('Editor: Erro ao navegar após upload:', err);
+      }
     };
     reader.onerror = (err) => {
       console.error('Editor: Erro ao ler arquivo:', err);
-      alert('Erro ao ler o arquivo. Tente novamente.');
+      if (notify) {
+        notify('Erro de Leitura', 'Erro ao ler o arquivo. Tente novamente.', 'error');
+      } else {
+        alert('Erro ao ler o arquivo. Tente novamente.');
+      }
     };
     reader.readAsDataURL(file);
   };
@@ -1213,7 +1262,7 @@ export function Editor({ imageUrl, onNavigate, initialTool = 'background', userR
             <motion.button 
               whileHover={!(isProcessing || !displayImage) ? { scale: 1.05, boxShadow: "0 20px 25px -5px rgb(79 70 229 / 0.4)" } : {}}
               whileTap={!(isProcessing || !displayImage) ? { scale: 0.95 } : {}}
-              onClick={handleApplyChanges}
+              onClick={() => handleApplyChanges()}
               disabled={isProcessing || !displayImage}
               className={`px-3 md:px-6 py-2 md:py-3 bg-indigo-600 text-white rounded-xl text-[10px] md:text-xs font-bold transition-all whitespace-nowrap shadow-lg shadow-indigo-500/20 flex items-center gap-2 ${isProcessing ? 'opacity-70 cursor-wait' : 'hover:opacity-90'}`}
             >

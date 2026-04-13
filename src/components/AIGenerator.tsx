@@ -19,7 +19,6 @@ import {
   X,
   Trash2
 } from 'lucide-react';
-import { GoogleGenAI, ThinkingLevel } from "@google/genai";
 import { db, auth, addDoc, collection, serverTimestamp, uploadImageToStorage, getDocs, query, where, orderBy, limit, deleteDoc, doc, handleFirestoreError, OperationType } from '../firebase';
 import { usageService } from '../services/usageService';
 
@@ -91,6 +90,12 @@ export default function AIGenerator({ userRole, onOpenPricing, onNavigate }: AIG
   ];
 
   const handleGenerate = async () => {
+    if (!auth.currentUser) {
+      alert("Você precisa estar logado para gerar imagens.");
+      onNavigate?.('signup');
+      return;
+    }
+
     if (!prompt.trim()) return;
 
     // Usage check for free users
@@ -103,45 +108,28 @@ export default function AIGenerator({ userRole, onOpenPricing, onNavigate }: AIG
     setIsGenerating(true);
     setShowSuccess(false);
     try {
-      const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
-      
-      let styleDescription = style;
-      if (style === 'pixar') {
-        styleDescription = 'Pixar 3D style';
-      } else if (style === 'photorealistic') {
-        styleDescription = 'photorealistic 8k';
-      } else if (style === 'digital_art') {
-        styleDescription = 'digital art';
-      } else if (style === 'anime') {
-        styleDescription = 'anime style';
-      } else if (style === 'oil_painting') {
-        styleDescription = 'oil painting';
-      } else if (style === '3d_render') {
-        styleDescription = '3D render';
-      } else if (style === 'sketch') {
-        styleDescription = 'pencil sketch';
-      }
-
-      const fullPrompt = `${styleDescription} of: ${prompt}. ${negativePrompt ? `Avoid: ${negativePrompt}.` : ''} Aspect: ${aspectRatio}.`;
-      
-      const response = await ai.models.generateContent({
-        model: 'gemini-2.5-flash-image',
-        contents: {
-          parts: [{ text: fullPrompt }],
+      const response = await fetch('/api/generate-image', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
         },
-        config: {
-          candidateCount: 1,
-          thinkingConfig: {
-            thinkingLevel: ThinkingLevel.LOW
-          },
-          imageConfig: {
-            aspectRatio: aspectRatio as any,
-          }
-        }
+        body: JSON.stringify({
+          prompt,
+          negativePrompt,
+          aspectRatio,
+          style
+        }),
       });
 
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || 'Erro ao gerar imagem');
+      }
+
+      const data = await response.json();
+      
       let foundImage = false;
-      const candidates = response.candidates;
+      const candidates = data.candidates;
       
       if (candidates && candidates.length > 0 && candidates[0].content?.parts) {
         for (const part of candidates[0].content.parts) {

@@ -6,6 +6,7 @@ import { FirebaseUser } from '../firebase';
 import { useBatch } from '../context/BatchContext';
 import { AffiliateBanner } from './AffiliateBanner';
 import { AdUnit } from './AdUnit';
+import { useLanguage } from '../context/LanguageContext';
 
 interface SidebarProps {
   activeScreen: Screen;
@@ -13,6 +14,7 @@ interface SidebarProps {
   isOpen: boolean;
   onClose: () => void;
   user: FirebaseUser | null;
+  userData?: any;
   userRole?: string;
   onLogout: () => void;
   onOpenPricing: () => void;
@@ -22,9 +24,10 @@ interface SidebarProps {
   onToggleTheme?: () => void;
 }
 
-export function Sidebar({ activeScreen, onNavigate, isOpen, onClose, user, userRole, onLogout, onOpenPricing, appConfig, monetization, theme, onToggleTheme }: SidebarProps) {
+export function Sidebar({ activeScreen, onNavigate, isOpen, onClose, user, userData, userRole, onLogout, onOpenPricing, appConfig, monetization, theme, onToggleTheme }: SidebarProps) {
+  const { t } = useLanguage();
   const navItems = [
-    { id: 'home', label: 'Início', icon: Home },
+    { id: 'home', label: t('home'), icon: Home },
     { id: 'generate', label: 'Criar com IA', icon: Sparkles },
     { id: 'upload', label: 'Carregar Imagem', icon: Upload },
     { id: 'editor', label: 'Remover Fundo', icon: Layers },
@@ -34,15 +37,16 @@ export function Sidebar({ activeScreen, onNavigate, isOpen, onClose, user, userR
     { id: 'outpaint', label: 'Expansão Generativa', icon: Maximize2, isPro: true },
     { id: 'variations', label: 'Variações de Imagem', icon: RefreshCw, isPro: true },
     { id: 'filters', label: 'Filtros Artísticos', icon: Palette },
-    { id: 'history', label: 'Histórico', icon: History },
+    { id: 'history', label: t('history'), icon: History },
     { id: 'pricing_tab', label: 'Planos & Preços', icon: Crown },
-    { id: 'notifications', label: 'Notificações', icon: Bell },
-    { id: 'signup', label: 'Cadastro', icon: User },
-    { id: 'settings', label: 'Definições', icon: Settings },
+    { id: 'notifications', label: t('notifications'), icon: Bell },
+    { id: 'profile', label: t('profile'), icon: User },
+    { id: 'signup', label: t('signup'), icon: User },
+    { id: 'settings', label: t('settings'), icon: Settings },
   ];
 
   if (userRole === 'admin') {
-    navItems.splice(navItems.length - 1, 0, { id: 'admin', label: 'Painel Admin', icon: Shield });
+    navItems.splice(navItems.length - 1, 0, { id: 'admin', label: t('admin'), icon: Shield });
   }
 
   const handleNavigate = (screen: string) => {
@@ -141,8 +145,8 @@ export function Sidebar({ activeScreen, onNavigate, isOpen, onClose, user, userR
           {user && (
             <div className="p-4 bg-slate-100 dark:bg-slate-900 rounded-2xl flex items-center gap-3">
               <div className="w-10 h-10 rounded-full overflow-hidden bg-indigo-100 dark:bg-indigo-900/40 flex items-center justify-center text-indigo-600 relative">
-                {user.photoURL ? (
-                  <img src={user.photoURL} alt={user.displayName || 'User'} className="w-full h-full object-cover" />
+                {(userData?.photoURL || user.photoURL) ? (
+                  <img src={userData?.photoURL || user.photoURL || ''} alt={userData?.displayName || user.displayName || 'User'} className="w-full h-full object-cover" />
                 ) : (
                   <User size={20} />
                 )}
@@ -169,17 +173,6 @@ export function Sidebar({ activeScreen, onNavigate, isOpen, onClose, user, userR
               </button>
             </div>
           )}
-          {user && userRole !== 'pro' && userRole !== 'admin' && (
-            <div className="p-4 bg-indigo-50 dark:bg-indigo-900/20 rounded-2xl">
-              <p className="text-xs font-bold text-indigo-600 dark:text-indigo-400 mb-2">Plano Gratuito</p>
-              <button 
-                onClick={onOpenPricing}
-                className="w-full py-2 bg-indigo-600 text-white rounded-lg text-sm font-bold shadow-md shadow-indigo-500/20 hover:opacity-90 transition-opacity"
-              >
-                Atualizar para Pro
-              </button>
-            </div>
-          )}
         </div>
       </aside>
     </>
@@ -191,6 +184,7 @@ interface TopBarProps {
   onMenuClick: () => void;
   onNavigate: (screen: Screen) => void;
   user: FirebaseUser | null;
+  userData?: any;
   userRole?: string;
   hasUnreadNotifications: boolean;
   onOpenPricing: () => void;
@@ -199,19 +193,20 @@ interface TopBarProps {
   onToggleTheme?: () => void;
 }
 
-export function TopBar({ activeScreen, onMenuClick, onNavigate, user, userRole, hasUnreadNotifications, onOpenPricing, appConfig, theme, onToggleTheme }: TopBarProps) {
+export function TopBar({ activeScreen, onMenuClick, onNavigate, user, userData, userRole, hasUnreadNotifications, onOpenPricing, appConfig, theme, onToggleTheme }: TopBarProps) {
+  const { t } = useLanguage();
   const { isProcessing, files } = useBatch();
   const processingCount = files.filter(f => f.status === 'processing').length;
   const completedCount = files.filter(f => f.status === 'completed').length;
   const totalCount = files.length;
 
   const screenNames: Record<Screen, string> = {
-    home: 'Início',
+    home: t('home'),
     editor: 'Remover Fundo',
-    history: 'Histórico',
+    history: t('history'),
     objects: 'Remover Objeto',
     tools: 'Recursos',
-    settings: 'Definições',
+    settings: t('settings'),
     upload: 'Carregar Imagem',
     upscale: 'Melhorar Qualidade',
     face: 'Retoque Facial',
@@ -219,15 +214,16 @@ export function TopBar({ activeScreen, onMenuClick, onNavigate, user, userRole, 
     crop: 'Recorte & Ajuste',
     layers: 'Composição',
     magic: 'Edição Mágica',
-    signup: 'Cadastro',
-    notifications: 'Notificações',
+    signup: t('signup'),
+    notifications: t('notifications'),
     batch: 'Processamento em Lote',
-    admin: 'Painel Admin',
+    admin: t('admin'),
     generate: 'Criar com IA',
     outpaint: 'Expansão Generativa',
     variations: 'Variações de Imagem',
     terms: 'Termos e Condições',
-    privacy: 'Política de Privacidade'
+    privacy: 'Política de Privacidade',
+    profile: t('profile')
   };
 
   return (
@@ -306,15 +302,15 @@ export function TopBar({ activeScreen, onMenuClick, onNavigate, user, userRole, 
           <motion.button 
             whileHover={{ scale: 1.1, backgroundColor: "rgba(79, 70, 229, 0.1)" }}
             whileTap={{ scale: 0.9 }}
-            onClick={() => onNavigate('signup')}
+            onClick={() => onNavigate(user ? 'profile' : 'signup')}
             className={`p-2 rounded-full transition-all flex items-center justify-center overflow-hidden relative ${
-              activeScreen === 'signup' 
+              activeScreen === 'signup' || activeScreen === 'profile'
                 ? 'bg-indigo-100 dark:bg-indigo-900/40 text-indigo-600' 
                 : 'text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-white'
             }`}
           >
-            {user?.photoURL ? (
-              <img src={user.photoURL} alt="User" className="w-6 h-6 rounded-full object-cover" />
+            {(userData?.photoURL || user?.photoURL) ? (
+              <img src={userData?.photoURL || user?.photoURL || ''} alt="User" className="w-6 h-6 rounded-full object-cover" />
             ) : (
               <User size={20} />
             )}

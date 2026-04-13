@@ -1,4 +1,4 @@
-export type Screen = 'home' | 'editor' | 'history' | 'objects' | 'tools' | 'settings' | 'upload' | 'upscale' | 'face' | 'filters' | 'crop' | 'layers' | 'magic' | 'signup' | 'notifications' | 'batch' | 'admin' | 'generate' | 'outpaint' | 'variations' | 'terms' | 'privacy';
+export type Screen = 'home' | 'editor' | 'history' | 'objects' | 'tools' | 'settings' | 'upload' | 'upscale' | 'face' | 'filters' | 'crop' | 'layers' | 'magic' | 'signup' | 'notifications' | 'batch' | 'admin' | 'generate' | 'outpaint' | 'variations' | 'terms' | 'privacy' | 'profile';
 
 export interface Project {
   id: string;

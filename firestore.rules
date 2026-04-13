@@ -14,6 +14,7 @@ service cloud.firestore {
     //   - displayName: string (optional) - User display name
     //   - photoURL: string (optional, url) - User profile picture URL
     //   - role: string (required, enum: ['user', 'admin']) - User role
+    //   - planSelected: bool (optional) - Whether the user has selected a plan
     //   - createdAt: timestamp (required, immutable) - Account creation timestamp
     //
     // Collection: usage
@@ -50,6 +51,16 @@ service cloud.firestore {
     //   - phone: string
     //   - message: string
     //   - createdAt: timestamp
+    //
+    // Collection: events
+    // Document ID: {eventId}
+    // Fields:
+    //   - type: string (enum: ['page_view', 'image_processed', 'user_signup', 'plan_upgrade', 'login', 'error', 'click_pricing'])
+    //   - userId: string
+    //   - email: string
+    //   - path: string
+    //   - metadata: map
+    //   - timestamp: timestamp
     //
     // ===============================================================
 
@@ -92,10 +103,11 @@ service cloud.firestore {
 
     function isValidUser(data) {
       return hasRequiredFields(['uid', 'email', 'role']) &&
-             hasOnlyAllowedFields(['uid', 'email', 'displayName', 'photoURL', 'role', 'createdAt']) &&
+             hasOnlyAllowedFields(['uid', 'email', 'displayName', 'photoURL', 'role', 'planSelected', 'createdAt']) &&
              data.uid is string && data.uid.size() > 0 &&
              data.email is string && isValidEmail(data.email) &&
              data.role in ['user', 'pro', 'admin'] &&
+             (!('planSelected' in data) || data.planSelected is bool) &&
              (!('displayName' in data) || (data.displayName is string && data.displayName.size() < 100)) &&
              (!('photoURL' in data) || isValidUrl(data.photoURL));
     }
@@ -161,20 +173,28 @@ service cloud.firestore {
              data.subscribedAt is string;
     }
 
+    function isValidEvent(data) {
+      return hasRequiredFields(['type', 'userId', 'email', 'timestamp']) &&
+             data.type is string &&
+             data.userId is string &&
+             data.email is string &&
+             data.timestamp is timestamp;
+    }
+
     // ===============================================================
     // Rules
     // ===============================================================
 
     match /users/{userId} {
-      // Users can only read their own profile, unless they are admin
-      allow read: if isOwner(userId) || isAdmin();
+      // Users can always read their own profile
+      allow read: if isAuthenticated() && (request.auth.uid == userId || isAdmin());
       
       // Create: user must be the owner, role must be 'user' (unless admin), and data must be valid
-      allow create: if isAuthenticated() && isOwner(userId) && isValidUser(request.resource.data) &&
+      allow create: if isAuthenticated() && request.auth.uid == userId && isValidUser(request.resource.data) &&
                     (request.resource.data.role == 'user' || isAdmin());
       
       // Update: user must be the owner, role can be updated to 'pro' if they are already 'user'
-      allow update: if isAuthenticated() && isOwner(userId) && isValidUser(request.resource.data) &&
+      allow update: if isAuthenticated() && request.auth.uid == userId && isValidUser(request.resource.data) &&
                     (request.resource.data.role == resource.data.role || 
                      (resource.data.role == 'user' && request.resource.data.role == 'pro') || 
                      isAdmin()) &&
@@ -222,6 +242,15 @@ service cloud.firestore {
     match /newsletter/{email} {
       allow create: if isValidNewsletter(request.resource.data);
       allow read, delete: if isAdmin();
+    }
+
+    match /events/{eventId} {
+      allow create: if isValidEvent(request.resource.data);
+      allow read: if isAdmin();
+    }
+
+    match /test/connection {
+      allow read: if true;
     }
   }
 }

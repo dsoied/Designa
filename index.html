@@ -8,6 +8,29 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <script>
+      // Google Analytics Integration
+      const rawGaId = "%VITE_GA_MEASUREMENT_ID%";
+      const gaId = rawGaId ? rawGaId.trim() : "";
+      
+      if (gaId && gaId.startsWith('G-')) {
+        const script = document.createElement('script');
+        script.async = true;
+        script.src = `https://www.googletagmanager.com/gtag/js?id=${gaId}`;
+        document.head.appendChild(script);
+
+        window.dataLayer = window.dataLayer || [];
+        window.gtag = function() {
+          window.dataLayer.push(arguments);
+        };
+        
+        gtag('js', new Date());
+        gtag('config', gaId, {
+          page_path: window.location.pathname,
+          send_page_view: false // We handle this manually in AnalyticsService to avoid double counting with SPA navigation
+        });
+      }
+    </script>
   </head>
   <body>
     <div id="root"></div>

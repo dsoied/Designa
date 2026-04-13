@@ -1,12 +1,13 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { CloudUpload, ArrowRight, ChevronRight, Layers, Eraser, Sparkles, ExternalLink, Plus, Crown, Zap, DollarSign } from 'lucide-react';
 import { motion } from 'motion/react';
-import { db, auth, collection, query, where, orderBy, onSnapshot, limit, getDoc, doc } from '../firebase';
+import { db, auth, collection, query, where, orderBy, onSnapshot, limit, getDoc, doc, handleFirestoreError, OperationType } from '../firebase';
 import { Project, MonetizationSettings, FooterSettings, AppConfig } from '../types';
 import { UserUsage } from '../services/usageService';
 import { ContactSection } from './ContactSection';
 import { AffiliateBanner } from './AffiliateBanner';
 import { Footer } from './Footer';
+import { useLanguage } from '../context/LanguageContext';
 
 interface HomeProps {
   onNavigate: (screen: any, imageData?: string) => void;
@@ -16,9 +17,11 @@ interface HomeProps {
   appConfig?: AppConfig;
   monetization?: MonetizationSettings | null;
   footerSettings?: FooterSettings | null;
+  notify?: (title: string, message: string, type?: 'success' | 'error' | 'info') => void;
 }
 
-export function Home({ onNavigate, selectedImage, userRole, onOpenPricing, appConfig, monetization, footerSettings }: HomeProps) {
+export function Home({ onNavigate, selectedImage, userRole, onOpenPricing, appConfig, monetization, footerSettings, notify }: HomeProps) {
+  const { t } = useLanguage();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [isDragging, setIsDragging] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
@@ -29,14 +32,18 @@ export function Home({ onNavigate, selectedImage, userRole, onOpenPricing, appCo
     const fetchUsage = async () => {
       if (auth.currentUser) {
         const usageRef = doc(db, 'usage', auth.currentUser.uid);
-        const snap = await getDoc(usageRef);
-        if (snap.exists()) {
-          setUsage(snap.data() as UserUsage);
+        try {
+          const snap = await getDoc(usageRef);
+          if (snap.exists()) {
+            setUsage(snap.data() as UserUsage);
+          }
+        } catch (error) {
+          console.error('Home: Erro ao buscar uso:', error);
         }
       }
     };
     fetchUsage();
-  }, []);
+  }, [auth.currentUser]);
 
   useEffect(() => {
     if (!auth.currentUser) {
@@ -59,49 +66,105 @@ export function Home({ onNavigate, selectedImage, userRole, onOpenPricing, appCo
       setRecentProjects(fetchedProjects);
     }, (error) => {
       console.error('Home: Erro ao buscar projetos recentes:', error);
+      handleFirestoreError(error, OperationType.LIST, 'projects');
     });
 
     return () => unsubscribe();
-  }, []);
+  }, [auth.currentUser]);
 
   const handleUploadClick = () => {
     fileInputRef.current?.click();
   };
 
   const processFile = (file: File) => {
-    console.log('Home: Processando arquivo:', file.name, file.type, file.size);
+    console.log('Home: Iniciando processamento do arquivo:', file.name, 'tipo:', file.type, 'tamanho:', file.size);
+    
     if (!file.type.startsWith('image/')) {
-      alert('Por favor, selecione apenas arquivos de imagem.');
+      if (notify) {
+        notify('Erro de Arquivo', 'Por favor, selecione apenas arquivos de imagem.', 'error');
+      } else {
+        alert('Por favor, selecione apenas arquivos de imagem.');
+      }
       return;
     }
 
-    // Free user limit: 2MB, Pro/Admin: 20MB
-    const limit = (userRole === 'pro' || userRole === 'admin') ? 20 * 1024 * 1024 : 2 * 1024 * 1024;
+    // Free user limit: 10MB, Pro/Admin: 20MB
+    const limit = (userRole === 'pro' || userRole === 'admin') ? 20 * 1024 * 1024 : 10 * 1024 * 1024;
     if (file.size > limit) {
       if (userRole !== 'pro' && userRole !== 'admin') {
-        alert('O arquivo é muito grande para o plano gratuito (limite 2MB). Faça upgrade para Pro para enviar arquivos de até 20MB.');
-        onOpenPricing?.();
+        const msg = 'O arquivo é muito grande para o plano gratuito (limite 10MB). Faça upgrade para Pro para enviar arquivos de até 20MB.';
+        if (notify) {
+          notify('Limite Excedido', msg, 'error');
+        } else {
+          alert(msg);
+        }
+        onOpenPricing();
       } else {
-        alert('O arquivo excede o limite de 20MB.');
+        const msg = 'O arquivo excede o limite de 20MB.';
+        if (notify) {
+          notify('Erro de Tamanho', msg, 'error');
+        } else {
+          alert(msg);
+        }
       }
       return;
     }
 
     setIsLoading(true);
+    console.log('Home: setIsLoading(true)');
 
-    const reader = new FileReader();
-    reader.onload = (e) => {
-      const imageData = e.target?.result as string;
-      console.log('Home: Imagem lida com sucesso (tamanho:', imageData.length, '), chamando onNavigate');
-      onNavigate('editor', imageData);
+    try {
+      const reader = new FileReader();
+      
+      // Add a safety timeout in case FileReader hangs
+      const timeoutId = setTimeout(() => {
+        if (isLoading) {
+          console.error('Home: FileReader timeout atingido');
+          setIsLoading(false);
+          if (notify) notify('Erro de Carregamento', 'O carregamento da imagem demorou muito. Tente uma imagem menor.', 'error');
+        }
+      }, 15000);
+
+      reader.onload = (e) => {
+        clearTimeout(timeoutId);
+        const imageData = e.target?.result as string;
+        console.log('Home: Imagem lida com sucesso (tamanho:', imageData.length, '), chamando onNavigate');
+        
+        try {
+          onNavigate('editor', imageData);
+          console.log('Home: onNavigate chamado com sucesso');
+        } catch (navErr) {
+          console.error('Home: Erro ao navegar para o editor:', navErr);
+          if (notify) notify('Erro de Navegação', 'Ocorreu um erro ao abrir o editor.', 'error');
+        } finally {
+          setIsLoading(false);
+          console.log('Home: setIsLoading(false) no onload');
+        }
+      };
+
+      reader.onerror = (err) => {
+        clearTimeout(timeoutId);
+        console.error('Home: Erro no FileReader:', err);
+        if (notify) {
+          notify('Erro de Leitura', 'Erro ao ler o arquivo. Tente novamente.', 'error');
+        } else {
+          alert('Erro ao ler o arquivo. Tente novamente.');
+        }
+        setIsLoading(false);
+        console.log('Home: setIsLoading(false) no onerror');
+      };
+
+      reader.onabort = () => {
+        clearTimeout(timeoutId);
+        console.warn('Home: Leitura do arquivo abortada');
+        setIsLoading(false);
+      };
+
+      reader.readAsDataURL(file);
+    } catch (err) {
+      console.error('Home: Erro inesperado no processFile:', err);
       setIsLoading(false);
-    };
-    reader.onerror = (err) => {
-      console.error('Home: Erro no FileReader:', err);
-      alert('Erro ao ler o arquivo. Tente novamente.');
-      setIsLoading(false);
-    };
-    reader.readAsDataURL(file);
+    }
   };
 
   const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -159,7 +222,7 @@ export function Home({ onNavigate, selectedImage, userRole, onOpenPricing, appCo
                 <Sparkles size={12} className="text-yellow-400" />
                 Oferta Limitada
               </div>
-              <h3 className="text-3xl sm:text-4xl font-black tracking-tight">Seja Pro por apenas $5/mês</h3>
+              <h3 className="text-3xl sm:text-4xl font-black tracking-tight">Seja Pro por apenas $3 por 7 meses</h3>
               <p className="text-indigo-100 max-w-xl font-medium">Desbloqueie processamento ilimitado, upscale em 4K e todos os recursos premium de IA sem limites de cota.</p>
             </div>
             <motion.button
@@ -232,7 +295,7 @@ export function Home({ onNavigate, selectedImage, userRole, onOpenPricing, appCo
               onClick={() => onNavigate('signup')}
               className="px-8 py-4 bg-indigo-50 dark:bg-indigo-900/20 text-indigo-600 dark:text-indigo-400 rounded-full font-bold transition-all border border-indigo-200 dark:border-indigo-800/50"
             >
-              Criar Conta
+              {t('signup')}
             </motion.button>
           </div>
         </motion.div>

@@ -117,6 +117,21 @@
         "subscribedAt": { "type": "string", "format": "date-time" }
       },
       "required": ["email", "subscribedAt"]
+    },
+    "AnalyticsEvent": {
+      "title": "Analytics Event",
+      "description": "User interaction and system events for analytics",
+      "type": "object",
+      "properties": {
+        "type": { "type": "string", "description": "Type of event" },
+        "userId": { "type": "string", "description": "ID of the user who triggered the event" },
+        "email": { "type": "string", "description": "Email of the user" },
+        "path": { "type": "string", "description": "Page path where the event occurred" },
+        "tool": { "type": "string", "description": "Tool name if applicable" },
+        "metadata": { "type": "object", "description": "Additional event data" },
+        "timestamp": { "type": "string", "format": "date-time", "description": "Event timestamp" }
+      },
+      "required": ["type", "userId", "email", "timestamp"]
     }
   },
   "firestore": {
@@ -151,6 +166,10 @@
     "/newsletter/{email}": {
       "schema": "NewsletterSubscription",
       "description": "Stores newsletter subscriptions"
+    },
+    "/events/{eventId}": {
+      "schema": "AnalyticsEvent",
+      "description": "Stores analytics events for dashboard visualization"
     }
   }
 }

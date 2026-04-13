@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Check, Zap, Shield, Star, Crown, ArrowRight, X } from 'lucide-react';
 import { auth, db, doc, updateDoc, addDoc, collection, setDoc } from '../firebase';
+import { useLanguage } from '../context/LanguageContext';
 
 interface PricingProps {
   isOpen: boolean;
@@ -18,6 +19,7 @@ declare global {
 }
 
 export function Pricing({ isOpen, onClose, currentRole, isMandatory, onPlanSelected }: PricingProps) {
+  const { t } = useLanguage();
   const [isPaypalLoaded, setIsPaypalLoaded] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
   const paypalContainerRef = useRef<HTMLDivElement>(null);
@@ -38,6 +40,8 @@ export function Pricing({ isOpen, onClose, currentRole, isMandatory, onPlanSelec
       onClose();
     } catch (err) {
       console.error('Pricing: Erro ao selecionar plano gratuito:', err);
+      // Even if firestore fails, we should let them continue if they clicked the button
+      onClose();
     } finally {
       setIsProcessing(false);
     }
@@ -104,21 +108,37 @@ export function Pricing({ isOpen, onClose, currentRole, isMandatory, onPlanSelec
               return actions.order.create({
                 purchase_units: [{
                   amount: {
-                    value: '5.00'
+                    value: '3.00'
                   },
-                  description: 'Designa Pro Plan - Acesso Ilimitado'
+                  description: 'Designa Pro Plan - 7 Meses de Acesso Ilimitado'
                 }]
               });
             },
             onApprove: async (data: any, actions: any) => {
               setIsProcessing(true);
               try {
-                const order = await actions.order.capture();
-                console.log('PayPal: Pagamento aprovado', order);
+                // Call our server to capture the order securely
+                const response = await fetch('/api/paypal/capture-order', {
+                  method: 'POST',
+                  headers: {
+                    'Content-Type': 'application/json',
+                  },
+                  body: JSON.stringify({
+                    orderID: data.orderID
+                  }),
+                });
+
+                if (!response.ok) {
+                  const errorData = await response.json();
+                  throw new Error(errorData.error || 'Erro ao capturar pedido');
+                }
+
+                const result = await response.json();
+                console.log('PayPal: Pagamento capturado no servidor', result);
                 await handleProSuccess();
               } catch (err) {
                 console.error('Pricing: Erro no checkout:', err);
-                alert('Ocorreu um erro ao processar seu pagamento. Tente novamente.');
+                alert(err instanceof Error ? err.message : 'Ocorreu um erro ao processar seu pagamento. Tente novamente.');
               } finally {
                 setIsProcessing(false);
               }
@@ -215,8 +235,8 @@ export function Pricing({ isOpen, onClose, currentRole, isMandatory, onPlanSelec
         <div className="p-6 flex flex-col bg-white dark:bg-slate-900">
           <div className="text-center mb-4">
             <div className="flex items-baseline justify-center gap-1">
-              <span className="text-4xl font-black text-slate-900 dark:text-white">$5</span>
-              <span className="text-slate-500 dark:text-slate-400 font-bold text-sm">/mês</span>
+              <span className="text-4xl font-black text-slate-900 dark:text-white">$3</span>
+              <span className="text-slate-500 dark:text-slate-400 font-bold text-sm">/ 7 meses</span>
             </div>
           </div>
 
@@ -224,9 +244,9 @@ export function Pricing({ isOpen, onClose, currentRole, isMandatory, onPlanSelec
             <div className="p-3 rounded-xl border border-indigo-100 dark:border-indigo-900 bg-indigo-50/50 dark:bg-indigo-900/10 flex items-center justify-between">
               <div>
                 <p className="text-sm font-bold text-slate-900 dark:text-white">Plano Pro</p>
-                <p className="text-[10px] text-slate-500">Acesso total e imediato</p>
+                <p className="text-[10px] text-slate-500">7 meses de acesso total</p>
               </div>
-              <p className="font-black text-indigo-600">$5.00</p>
+              <p className="font-black text-indigo-600">$3.00</p>
             </div>
           </div>
 
@@ -283,7 +303,7 @@ export function Pricing({ isOpen, onClose, currentRole, isMandatory, onPlanSelec
                   onClick={handleSelectFree}
                   className="w-full py-4 bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 rounded-2xl font-black uppercase tracking-widest text-[10px] hover:bg-slate-200 dark:hover:bg-slate-700 transition-all border border-slate-200 dark:border-slate-700"
                 >
-                  Continuar com Plano Gratuito
+                  {t('continueWithFree')}
                 </button>
               </div>
             )}

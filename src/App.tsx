@@ -9,6 +9,8 @@ import { SignUp } from './components/SignUp';
 import { Notifications } from './components/Notifications';
 import { Pricing } from './components/Pricing';
 import { BatchProcessor } from './components/BatchProcessor';
+import { UserProfile } from './components/UserProfile';
+import { CookieConsent } from './components/CookieConsent';
 import AdminDashboard from './components/AdminDashboard';
 import AIGenerator from './components/AIGenerator';
 import { LegalPage } from './components/LegalPage';
@@ -16,12 +18,34 @@ import { Screen, Notification, MonetizationSettings, FooterSettings, AppConfig }
 import { motion, AnimatePresence } from 'motion/react';
 import { auth, onAuthStateChanged, logout, FirebaseUser, db, query, collection, where, orderBy, onSnapshot, doc, handleFirestoreError, OperationType } from './firebase';
 import { getDocFromServer } from 'firebase/firestore';
+import { useLanguage } from './context/LanguageContext';
+
+import { trackPageView } from './services/analyticsService';
 
 export default function App() {
-  const [activeScreen, setActiveScreen] = useState<Screen>('home');
+  const { t } = useLanguage();
+  const [activeScreen, setActiveScreen] = useState<Screen>(() => {
+    try {
+      const saved = sessionStorage.getItem('designa_active_screen');
+      return (saved as Screen) || 'home';
+    } catch (e) {
+      return 'home';
+    }
+  });
+  
+  useEffect(() => {
+    trackPageView(activeScreen);
+  }, [activeScreen]);
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
-  const [selectedImage, setSelectedImage] = useState<string | null>(null);
+  const [selectedImage, setSelectedImage] = useState<string | null>(() => {
+    try {
+      return sessionStorage.getItem('designa_selected_image');
+    } catch (e) {
+      return null;
+    }
+  });
   const [user, setUser] = useState<FirebaseUser | null>(null);
+  const [userData, setUserData] = useState<any>(null);
   const [userRole, setUserRole] = useState<string>('user');
   const [isAuthReady, setIsAuthReady] = useState(false);
   const [notifications, setNotifications] = useState<Notification[]>([]);
@@ -179,36 +203,50 @@ export default function App() {
         // Owner email check
         const isOwner = currentUser.email === 'dissooquevemdepois@gmail.com';
         
-        // Fetch user role
+        // Fetch user role and data
         const userDocRef = doc(db, 'users', currentUser.uid);
         onSnapshot(userDocRef, (docSnap) => {
-          if (isOwner) {
-            setUserRole('admin');
-            setIsMandatoryPricing(false);
-          } else if (docSnap.exists()) {
+          if (docSnap.exists()) {
             const data = docSnap.data();
-            const role = data.role || 'user';
-            const planSelected = data.planSelected || false;
+            setUserData(data);
             
-            // Ensure only the owner can be admin, others can be pro or user
-            setUserRole(role === 'admin' ? 'user' : role);
-            
-            // If plan not selected, force pricing modal
-            if (!planSelected) {
-              setIsMandatoryPricing(true);
-              setIsPricingOpen(true);
-            } else {
+            if (isOwner) {
+              setUserRole('admin');
               setIsMandatoryPricing(false);
+            } else {
+              const role = data.role || 'user';
+              const planSelected = data.planSelected || false;
+              
+              // Ensure only the owner can be admin, others can be pro or user
+              setUserRole(role === 'admin' ? 'user' : role);
+              
+              // If plan not selected, force pricing modal
+              if (!planSelected) {
+                setIsMandatoryPricing(true);
+                setIsPricingOpen(true);
+              } else {
+                setIsMandatoryPricing(false);
+              }
             }
           } else {
-            setUserRole('user');
-            // New user without doc yet - likely just signed up
-            setIsMandatoryPricing(true);
-            setIsPricingOpen(true);
+            setUserData(null);
+            if (isOwner) {
+              setUserRole('admin');
+              setIsMandatoryPricing(false);
+            } else {
+              setUserRole('user');
+              // New user without doc yet - likely just signed up
+              setIsMandatoryPricing(true);
+              setIsPricingOpen(true);
+            }
           }
+        }, (error) => {
+          console.error("App: Erro no listener do perfil do usuário:", error);
+          handleFirestoreError(error, OperationType.GET, `users/${currentUser.uid}`);
         });
       } else {
         setUserRole('user');
+        setUserData(null);
       }
       setIsAuthReady(true);
       console.log('App: Auth state changed. User:', currentUser?.email);
@@ -280,8 +318,16 @@ export default function App() {
     if (imageData) {
       console.log('App: Atualizando selectedImage com novos dados');
       setSelectedImage(imageData);
+      try {
+        sessionStorage.setItem('designa_selected_image', imageData);
+      } catch (e) {
+        console.warn('App: Falha ao salvar imagem no sessionStorage (provavelmente muito grande)');
+      }
     }
     setActiveScreen(screen);
+    try {
+      sessionStorage.setItem('designa_active_screen', screen);
+    } catch (e) {}
   };
 
   const renderScreen = () => {
@@ -289,33 +335,33 @@ export default function App() {
     switch (activeScreen) {
       case 'home':
       case 'upload':
-        return <Home onNavigate={handleNavigate} selectedImage={selectedImage} userRole={userRole} onOpenPricing={() => setIsPricingOpen(true)} appConfig={appConfig} monetization={monetization} footerSettings={footerSettings} />;
+        return <Home onNavigate={handleNavigate} selectedImage={selectedImage} userRole={userRole} onOpenPricing={() => setIsPricingOpen(true)} appConfig={appConfig} monetization={monetization} footerSettings={footerSettings} notify={notify} />;
       case 'editor':
-        return <Editor imageUrl={selectedImage} onNavigate={handleNavigate} initialTool="background" userRole={userRole} onOpenPricing={() => setIsPricingOpen(true)} />;
+        return <Editor imageUrl={selectedImage} onNavigate={handleNavigate} initialTool="background" userRole={userRole} onOpenPricing={() => setIsPricingOpen(true)} notify={notify} />;
       case 'objects':
-        return <Editor imageUrl={selectedImage} onNavigate={handleNavigate} initialTool="object" userRole={userRole} onOpenPricing={() => setIsPricingOpen(true)} />;
+        return <Editor imageUrl={selectedImage} onNavigate={handleNavigate} initialTool="object" userRole={userRole} onOpenPricing={() => setIsPricingOpen(true)} notify={notify} />;
       case 'upscale':
-        return <Editor imageUrl={selectedImage} onNavigate={handleNavigate} initialTool="upscale" userRole={userRole} onOpenPricing={() => setIsPricingOpen(true)} />;
+        return <Editor imageUrl={selectedImage} onNavigate={handleNavigate} initialTool="upscale" userRole={userRole} onOpenPricing={() => setIsPricingOpen(true)} notify={notify} />;
       case 'face':
-        return <Editor imageUrl={selectedImage} onNavigate={handleNavigate} initialTool="face" userRole={userRole} onOpenPricing={() => setIsPricingOpen(true)} />;
+        return <Editor imageUrl={selectedImage} onNavigate={handleNavigate} initialTool="face" userRole={userRole} onOpenPricing={() => setIsPricingOpen(true)} notify={notify} />;
       case 'filters':
-        return <Editor imageUrl={selectedImage} onNavigate={handleNavigate} initialTool="filters" userRole={userRole} onOpenPricing={() => setIsPricingOpen(true)} />;
+        return <Editor imageUrl={selectedImage} onNavigate={handleNavigate} initialTool="filters" userRole={userRole} onOpenPricing={() => setIsPricingOpen(true)} notify={notify} />;
       case 'crop':
-        return <Editor imageUrl={selectedImage} onNavigate={handleNavigate} initialTool="crop" userRole={userRole} onOpenPricing={() => setIsPricingOpen(true)} />;
+        return <Editor imageUrl={selectedImage} onNavigate={handleNavigate} initialTool="crop" userRole={userRole} onOpenPricing={() => setIsPricingOpen(true)} notify={notify} />;
       case 'layers':
-        return <Editor imageUrl={selectedImage} onNavigate={handleNavigate} initialTool="layers" userRole={userRole} onOpenPricing={() => setIsPricingOpen(true)} />;
+        return <Editor imageUrl={selectedImage} onNavigate={handleNavigate} initialTool="layers" userRole={userRole} onOpenPricing={() => setIsPricingOpen(true)} notify={notify} />;
       case 'magic':
-        return <Editor imageUrl={selectedImage} onNavigate={handleNavigate} initialTool="magic" userRole={userRole} onOpenPricing={() => setIsPricingOpen(true)} />;
+        return <Editor imageUrl={selectedImage} onNavigate={handleNavigate} initialTool="magic" userRole={userRole} onOpenPricing={() => setIsPricingOpen(true)} notify={notify} />;
       case 'outpaint':
-        return <Editor imageUrl={selectedImage} onNavigate={handleNavigate} initialTool="outpaint" userRole={userRole} onOpenPricing={() => setIsPricingOpen(true)} />;
+        return <Editor imageUrl={selectedImage} onNavigate={handleNavigate} initialTool="outpaint" userRole={userRole} onOpenPricing={() => setIsPricingOpen(true)} notify={notify} />;
       case 'variations':
-        return <Editor imageUrl={selectedImage} onNavigate={handleNavigate} initialTool="variations" userRole={userRole} onOpenPricing={() => setIsPricingOpen(true)} />;
+        return <Editor imageUrl={selectedImage} onNavigate={handleNavigate} initialTool="variations" userRole={userRole} onOpenPricing={() => setIsPricingOpen(true)} notify={notify} />;
       case 'tools':
         return <Tools onNavigate={handleNavigate} selectedImage={selectedImage} monetization={monetization} />;
       case 'history':
         return <History onNavigate={handleNavigate} userRole={userRole} onOpenPricing={() => setIsPricingOpen(true)} monetization={monetization} />;
       case 'settings':
-        return <Settings user={user} userRole={userRole} onOpenPricing={() => setIsPricingOpen(true)} appConfig={appConfig} onNotify={notify} theme={theme} onToggleTheme={toggleTheme} />;
+        return <Settings user={user} userData={userData} userRole={userRole} onOpenPricing={() => setIsPricingOpen(true)} appConfig={appConfig} onNotify={notify} theme={theme} onToggleTheme={toggleTheme} />;
       case 'signup':
         return <SignUp onNavigate={handleNavigate} appConfig={appConfig} />;
       case 'notifications':
@@ -337,6 +383,8 @@ export default function App() {
         return userRole === 'admin' ? <AdminDashboard /> : <Home onNavigate={handleNavigate} selectedImage={selectedImage} userRole={userRole} onOpenPricing={() => setIsPricingOpen(true)} />;
       case 'generate':
         return <AIGenerator userRole={userRole} onOpenPricing={() => setIsPricingOpen(true)} onNavigate={handleNavigate} />;
+      case 'profile':
+        return <UserProfile onNavigate={handleNavigate} userRole={userRole} />;
       case 'terms':
         return <LegalPage type="terms" onNavigate={handleNavigate} appName={appConfig.appName} />;
       case 'privacy':
@@ -375,6 +423,7 @@ export default function App() {
         isOpen={isSidebarOpen}
         onClose={() => setIsSidebarOpen(false)}
         user={user}
+        userData={userData}
         userRole={userRole}
         onLogout={handleLogout}
         onOpenPricing={() => setIsPricingOpen(true)}
@@ -388,6 +437,7 @@ export default function App() {
         onMenuClick={() => setIsSidebarOpen(true)}
         onNavigate={handleNavigate}
         user={user}
+        userData={userData}
         userRole={userRole}
         hasUnreadNotifications={hasUnreadNotifications}
         onOpenPricing={() => setIsPricingOpen(true)}
@@ -424,6 +474,7 @@ export default function App() {
           setIsPricingOpen(false);
         }}
       />
+      <CookieConsent />
     </div>
   );
 }
