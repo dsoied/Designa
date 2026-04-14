@@ -151,7 +151,7 @@ export default function AIGenerator({ userRole, onOpenPricing, onNavigate }: AIG
         }
         
         // Fallback to client-side SDK if server is not available
-        const apiKey = process.env.GEMINI_API_KEY || '';
+        const apiKey = import.meta.env.VITE_GEMINI_API_KEY || '';
         const ai = new GoogleGenAI({ apiKey });
         const styleDescription = style === 'none' ? '' : (styles.find(s => s.id === style)?.name || style);
         const fullPrompt = style === 'none' 
@@ -246,7 +246,7 @@ export default function AIGenerator({ userRole, onOpenPricing, onNavigate }: AIG
     setIsRefining(true);
     setError(null);
     try {
-      const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY || '' });
+      const ai = new GoogleGenAI({ apiKey: import.meta.env.VITE_GEMINI_API_KEY || '' });
       
       const systemPrompt = `Você é um especialista em engenharia de prompts para geração de imagens. 
       O usuário fornecerá uma ideia básica e você deve sugerir 3 variações aprimoradas, mais detalhadas e artísticas.

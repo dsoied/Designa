@@ -69,7 +69,7 @@ export function BatchProvider({ children }: { children: React.ReactNode }) {
       });
 
       const base64Data = await base64Promise;
-      const apiKey = process.env.GEMINI_API_KEY || '';
+      const apiKey = import.meta.env.VITE_GEMINI_API_KEY || '';
       const ai = new GoogleGenAI({ apiKey });
       
       let prompt = "";

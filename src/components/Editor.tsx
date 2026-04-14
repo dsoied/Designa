@@ -320,7 +320,7 @@ export function Editor({ imageUrl, onNavigate, initialTool = 'background', userR
     }
     
     try {
-      const apiKey = process.env.GEMINI_API_KEY || '';
+      const apiKey = import.meta.env.VITE_GEMINI_API_KEY || '';
       const ai = new GoogleGenAI({ apiKey });
       
       // Resize image if it's too large to save quota/bandwidth
