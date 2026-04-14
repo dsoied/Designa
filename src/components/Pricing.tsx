@@ -183,135 +183,137 @@ export function Pricing({ isOpen, onClose, currentRole, isMandatory, onPlanSelec
         initial={{ scale: 0.9, opacity: 0, y: 20 }}
         animate={{ scale: 1, opacity: 1, y: 0 }}
         exit={{ scale: 0.9, opacity: 0, y: 20 }}
-        className="relative w-full max-w-md max-h-[90vh] bg-white dark:bg-slate-900 rounded-3xl shadow-2xl overflow-y-auto flex flex-col custom-scrollbar"
+        className="relative w-full max-w-md max-h-[90vh] bg-white dark:bg-slate-900 rounded-3xl shadow-2xl overflow-hidden flex flex-col"
       >
-        {!isMandatory && (
-          <button 
-            onClick={onClose}
-            className="absolute top-4 right-4 p-2 text-slate-400 hover:text-slate-600 dark:hover:text-white transition-colors z-10"
-          >
-            <X size={24} />
-          </button>
-        )}
+        {/* Fixed Close Button - Always responsive and visible */}
+        <button 
+          onClick={onClose}
+          className="absolute top-4 right-4 p-2 text-white/70 hover:text-white hover:bg-white/10 transition-all z-[110] rounded-full backdrop-blur-sm"
+          aria-label="Fechar"
+        >
+          <X size={24} />
+        </button>
 
-        {/* Top Section: Benefits */}
-        <div className="p-6 bg-indigo-600 text-white relative overflow-hidden shrink-0">
-          <div className="absolute top-0 right-0 -translate-y-1/4 translate-x-1/4 w-32 h-32 bg-white/10 rounded-full blur-2xl" />
-          
-          <div className="relative z-10">
-            <div className="inline-flex items-center gap-2 px-2 py-0.5 bg-white/20 backdrop-blur-md rounded-full text-[10px] font-black uppercase tracking-widest mb-4">
-              <Crown size={12} className="text-yellow-400" />
-              {isMandatory ? 'Escolha seu Plano' : 'Upgrade para Pro'}
-            </div>
+        <div className="overflow-y-auto flex-1 custom-scrollbar">
+          {/* Top Section: Benefits */}
+          <div className="p-6 bg-indigo-600 text-white relative overflow-hidden shrink-0">
+            <div className="absolute top-0 right-0 -translate-y-1/4 translate-x-1/4 w-32 h-32 bg-white/10 rounded-full blur-2xl" />
             
-            <h2 className="text-xl font-black mb-4 leading-tight">
-              {isMandatory ? 'Bem-vindo ao Designa!' : 'Potencial Criativo Ilimitado'}
-            </h2>
-            <p className="text-xs text-indigo-100 mb-4 font-medium">
-              {isMandatory ? 'Para começar sua jornada, selecione o plano que melhor se adapta às suas necessidades.' : 'Desbloqueie todas as funcionalidades premium.'}
-            </p>
-            
-            <ul className="grid grid-cols-1 gap-2 mb-2">
-              {[
-                'Processamento ilimitado',
-                'Arquivos de até 20MB',
-                'Todos os recursos IA',
-                'Processamento em Lote',
-                'Upscale 8K',
-                'Histórico completo',
-                'Sem limites de cota',
-                'Suporte prioritário'
-              ].map((benefit, i) => (
-                <li key={i} className="flex items-center gap-2">
-                  <Check size={12} className="text-indigo-200 shrink-0" />
-                  <span className="text-xs font-medium text-indigo-50">{benefit}</span>
-                </li>
-              ))}
-            </ul>
-          </div>
-        </div>
-
-        {/* Bottom Section: Pricing & Checkout */}
-        <div className="p-6 flex flex-col bg-white dark:bg-slate-900">
-          <div className="text-center mb-4">
-            <div className="flex items-baseline justify-center gap-1">
-              <span className="text-4xl font-black text-slate-900 dark:text-white">$3</span>
-              <span className="text-slate-500 dark:text-slate-400 font-bold text-sm">/ 7 meses</span>
-            </div>
-          </div>
-
-          <div className="mb-4">
-            <div className="p-3 rounded-xl border border-indigo-100 dark:border-indigo-900 bg-indigo-50/50 dark:bg-indigo-900/10 flex items-center justify-between">
-              <div>
-                <p className="text-sm font-bold text-slate-900 dark:text-white">Plano Pro</p>
-                <p className="text-[10px] text-slate-500">7 meses de acesso total</p>
+            <div className="relative z-10">
+              <div className="inline-flex items-center gap-2 px-2 py-0.5 bg-white/20 backdrop-blur-md rounded-full text-[10px] font-black uppercase tracking-widest mb-4">
+                <Crown size={12} className="text-yellow-400" />
+                {isMandatory ? 'Escolha seu Plano' : 'Upgrade para Pro'}
               </div>
-              <p className="font-black text-indigo-600">$3.00</p>
+              
+              <h2 className="text-xl font-black mb-4 leading-tight">
+                {isMandatory ? 'Bem-vindo ao Designa!' : 'Potencial Criativo Ilimitado'}
+              </h2>
+              <p className="text-xs text-indigo-100 mb-4 font-medium">
+                {isMandatory ? 'Para começar sua jornada, selecione o plano que melhor se adapta às suas necessidades.' : 'Desbloqueie todas as funcionalidades premium.'}
+              </p>
+              
+              <ul className="grid grid-cols-1 gap-2 mb-2">
+                {[
+                  'Processamento ilimitado',
+                  'Arquivos de até 20MB',
+                  'Todos os recursos IA',
+                  'Processamento em Lote',
+                  'Upscale 8K',
+                  'Histórico completo',
+                  'Sem limites de cota',
+                  'Suporte prioritário'
+                ].map((benefit, i) => (
+                  <li key={i} className="flex items-center gap-2">
+                    <Check size={12} className="text-indigo-200 shrink-0" />
+                    <span className="text-xs font-medium text-indigo-50">{benefit}</span>
+                  </li>
+                ))}
+              </ul>
             </div>
           </div>
 
-          <div className="relative">
-            {isProcessing && (
-              <div className="absolute inset-0 z-10 bg-white/80 dark:bg-slate-900/80 flex flex-col items-center justify-center rounded-xl">
-                <div className="w-8 h-8 border-4 border-indigo-600/30 border-t-indigo-600 rounded-full animate-spin mb-2" />
-                <p className="text-xs font-bold text-indigo-600">Processando...</p>
+          {/* Bottom Section: Pricing & Checkout */}
+          <div className="p-6 flex flex-col bg-white dark:bg-slate-900">
+            <div className="text-center mb-4">
+              <div className="flex items-baseline justify-center gap-1">
+                <span className="text-4xl font-black text-slate-900 dark:text-white">$3</span>
+                <span className="text-slate-500 dark:text-slate-400 font-bold text-sm">/ 7 meses</span>
               </div>
-            )}
-            
-            {(currentRole === 'pro' || currentRole === 'admin') ? (
-              <div className="p-8 bg-emerald-50 dark:bg-emerald-900/20 border-2 border-emerald-500 rounded-2xl text-center space-y-4">
-                <div className="w-16 h-16 bg-emerald-500 text-white rounded-full flex items-center justify-center mx-auto shadow-lg shadow-emerald-500/20">
-                  <Crown size={32} />
+            </div>
+
+            <div className="mb-4">
+              <div className="p-3 rounded-xl border border-indigo-100 dark:border-indigo-900 bg-indigo-50/50 dark:bg-indigo-900/10 flex items-center justify-between">
+                <div>
+                  <p className="text-sm font-bold text-slate-900 dark:text-white">Plano Pro</p>
+                  <p className="text-[10px] text-slate-500">7 meses de acesso total</p>
                 </div>
-                <div className="space-y-1">
-                  <h4 className="text-xl font-black text-slate-900 dark:text-white">Plano Ativo</h4>
-                  <p className="text-sm text-slate-500 dark:text-slate-400 font-medium">
-                    {currentRole === 'admin' ? 'Você é o Administrador do sistema.' : 'Você já possui acesso total ao Designa Pro.'}
-                  </p>
-                </div>
-                <button 
-                  onClick={onClose}
-                  className="w-full py-3 bg-emerald-600 text-white rounded-xl font-black uppercase tracking-widest text-xs shadow-lg shadow-emerald-500/20"
-                >
-                  Continuar Criando
-                </button>
+                <p className="font-black text-indigo-600">$3.00</p>
               </div>
-            ) : (
-              <div className="space-y-4">
+            </div>
+
+            <div className="relative">
+              {isProcessing && (
+                <div className="absolute inset-0 z-10 bg-white/80 dark:bg-slate-900/80 flex flex-col items-center justify-center rounded-xl">
+                  <div className="w-8 h-8 border-4 border-indigo-600/30 border-t-indigo-600 rounded-full animate-spin mb-2" />
+                  <p className="text-xs font-bold text-indigo-600">Processando...</p>
+                </div>
+              )}
+              
+              {(currentRole === 'pro' || currentRole === 'admin') ? (
+                <div className="p-8 bg-emerald-50 dark:bg-emerald-900/20 border-2 border-emerald-500 rounded-2xl text-center space-y-4">
+                  <div className="w-16 h-16 bg-emerald-500 text-white rounded-full flex items-center justify-center mx-auto shadow-lg shadow-emerald-500/20">
+                    <Crown size={32} />
+                  </div>
+                  <div className="space-y-1">
+                    <h4 className="text-xl font-black text-slate-900 dark:text-white">Plano Ativo</h4>
+                    <p className="text-sm text-slate-500 dark:text-slate-400 font-medium">
+                      {currentRole === 'admin' ? 'Você é o Administrador do sistema.' : 'Você já possui acesso total ao Designa Pro.'}
+                    </p>
+                  </div>
+                  <button 
+                    onClick={onClose}
+                    className="w-full py-3 bg-emerald-600 text-white rounded-xl font-black uppercase tracking-widest text-xs shadow-lg shadow-emerald-500/20"
+                  >
+                    Continuar Criando
+                  </button>
+                </div>
+              ) : (
                 <div className="space-y-4">
-                  <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest text-center mb-2">Pague com segurança</p>
-                  {!isPaypalLoaded ? (
-                    <div className="w-full py-8 bg-slate-50 dark:bg-slate-800/50 border border-dashed border-slate-200 dark:border-slate-700 rounded-2xl flex flex-col items-center justify-center gap-3">
-                      <div className="w-8 h-8 border-4 border-indigo-600/30 border-t-indigo-600 rounded-full animate-spin" />
-                      <p className="text-slate-500 dark:text-slate-400 text-xs font-bold uppercase tracking-widest">Carregando PayPal...</p>
+                  <div className="space-y-4">
+                    <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest text-center mb-2">Pague com segurança</p>
+                    {!isPaypalLoaded ? (
+                      <div className="w-full py-8 bg-slate-50 dark:bg-slate-800/50 border border-dashed border-slate-200 dark:border-slate-700 rounded-2xl flex flex-col items-center justify-center gap-3">
+                        <div className="w-8 h-8 border-4 border-indigo-600/30 border-t-indigo-600 rounded-full animate-spin" />
+                        <p className="text-slate-500 dark:text-slate-400 text-xs font-bold uppercase tracking-widest">Carregando PayPal...</p>
+                      </div>
+                    ) : (
+                      <div ref={paypalContainerRef} className="min-h-[150px] w-full" />
+                    )}
+                  </div>
+
+                  <div className="relative py-2">
+                    <div className="absolute inset-0 flex items-center">
+                      <div className="w-full border-t border-slate-200 dark:border-slate-800"></div>
                     </div>
-                  ) : (
-                    <div ref={paypalContainerRef} className="min-h-[150px] w-full" />
-                  )}
-                </div>
-
-                <div className="relative py-2">
-                  <div className="absolute inset-0 flex items-center">
-                    <div className="w-full border-t border-slate-200 dark:border-slate-800"></div>
+                    <div className="relative flex justify-center text-[10px] uppercase">
+                      <span className="bg-white dark:bg-slate-900 px-2 text-slate-400 font-black tracking-widest">Ou</span>
+                    </div>
                   </div>
-                  <div className="relative flex justify-center text-[10px] uppercase">
-                    <span className="bg-white dark:bg-slate-900 px-2 text-slate-400 font-black tracking-widest">Ou</span>
-                  </div>
-                </div>
 
-                <button
-                  onClick={handleSelectFree}
-                  className="w-full py-4 bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 rounded-2xl font-black uppercase tracking-widest text-[10px] hover:bg-slate-200 dark:hover:bg-slate-700 transition-all border border-slate-200 dark:border-slate-700"
-                >
-                  {t('continueWithFree')}
-                </button>
-              </div>
-            )}
+                  <button
+                    onClick={handleSelectFree}
+                    className="w-full py-4 bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 rounded-2xl font-black uppercase tracking-widest text-[10px] hover:bg-slate-200 dark:hover:bg-slate-700 transition-all border border-indigo-200 dark:border-indigo-900 shadow-sm"
+                  >
+                    {t('continueWithFree')}
+                  </button>
+                </div>
+              )}
+            </div>
+
+            <p className="text-[10px] text-center text-slate-400 dark:text-slate-500 mt-6 leading-relaxed">
+              Ao assinar, você concorda com nossos Termos de Serviço e Política de Privacidade. O pagamento é processado com segurança pelo PayPal.
+            </p>
           </div>
-
-          <p className="text-[10px] text-center text-slate-400 dark:text-slate-500 mt-6 leading-relaxed">
-            Ao assinar, você concorda com nossos Termos de Serviço e Política de Privacidade. O pagamento é processado com segurança pelo PayPal.
-          </p>
         </div>
       </motion.div>
     </div>

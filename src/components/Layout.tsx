@@ -104,6 +104,7 @@ export function Sidebar({ activeScreen, onNavigate, isOpen, onClose, user, userD
             return (
               <motion.button
                 key={item.id}
+                initial={{ backgroundColor: "rgba(255, 255, 255, 0)" }}
                 whileHover={isActive ? { x: 5 } : { x: 5, backgroundColor: "rgba(226, 232, 240, 0.5)" }}
                 whileTap={{ scale: 0.95 }}
                 onClick={() => handleNavigate(item.id)}

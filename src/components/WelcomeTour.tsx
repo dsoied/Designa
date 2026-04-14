@@ -30,6 +30,12 @@ export function WelcomeTour({ onComplete }: WelcomeTourProps) {
       target: "editor-canvas"
     },
     {
+      title: "Remoção Inteligente",
+      content: "Use o pincel vermelho para marcar o que remover e o verde para o que manter (ou restaurar). É como mágica!",
+      icon: <Sparkles className="text-indigo-600" size={32} />,
+      target: "editor-canvas"
+    },
+    {
       title: "Visualize e Compare",
       content: "Alterne entre a imagem original e o resultado, ou use o modo 'Comparar' para ver as mudanças lado a lado.",
       icon: <Sliders className="text-indigo-600" size={32} />,

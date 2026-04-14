@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
+import { GoogleGenAI } from "@google/genai";
 import { 
   Sparkles, 
   Image as ImageIcon, 
@@ -32,10 +33,13 @@ export default function AIGenerator({ userRole, onOpenPricing, onNavigate }: AIG
   const [prompt, setPrompt] = useState('');
   const [negativePrompt, setNegativePrompt] = useState('');
   const [aspectRatio, setAspectRatio] = useState<'1:1' | '16:9' | '9:16' | '4:3'>('1:1');
-  const [style, setStyle] = useState('photorealistic');
+  const [style, setStyle] = useState('none');
   const [isGenerating, setIsGenerating] = useState(false);
   const [showSuccess, setShowSuccess] = useState(false);
   const [generatedImage, setGeneratedImage] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [isRefining, setIsRefining] = useState(false);
+  const [suggestions, setSuggestions] = useState<string[]>([]);
   const [selectedHistoryImage, setSelectedHistoryImage] = useState<{id: string, url: string, prompt: string} | null>(null);
   const [generationHistory, setGenerationHistory] = useState<{id: string, url: string, prompt: string}[]>([]);
 
@@ -80,6 +84,7 @@ export default function AIGenerator({ userRole, onOpenPricing, onNavigate }: AIG
   };
 
   const styles = [
+    { id: 'none', name: 'Nenhum (Usar Prompt)', icon: <Sparkles size={14} /> },
     { id: 'photorealistic', name: 'Fotorrealista', icon: <ImageIcon size={14} /> },
     { id: 'digital_art', name: 'Arte Digital', icon: <Palette size={14} /> },
     { id: 'anime', name: 'Anime', icon: <Zap size={14} /> },
@@ -99,7 +104,7 @@ export default function AIGenerator({ userRole, onOpenPricing, onNavigate }: AIG
     if (!prompt.trim()) return;
 
     // Usage check for free users
-    const usage = await usageService.checkUsage(userRole || 'free');
+    const usage = await usageService.checkUsage(userRole || 'free', 'generate');
     if (!usage.allowed) {
       onOpenPricing?.();
       return;
@@ -107,26 +112,69 @@ export default function AIGenerator({ userRole, onOpenPricing, onNavigate }: AIG
 
     setIsGenerating(true);
     setShowSuccess(false);
+    setError(null);
     try {
-      const response = await fetch('/api/generate-image', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          prompt,
-          negativePrompt,
-          aspectRatio,
-          style
-        }),
-      });
-
-      if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.error || 'Erro ao gerar imagem');
+      // On Vercel, the /api/generate-image might not exist. 
+      // We'll try to use the client-side SDK if the server call fails.
+      let response;
+      try {
+        response = await fetch('/api/generate-image', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            prompt,
+            negativePrompt,
+            aspectRatio,
+            style
+          }),
+        });
+      } catch (fetchErr) {
+        console.warn("AIGenerator: Erro ao conectar com o servidor, tentando via cliente...", fetchErr);
       }
 
-      const data = await response.json();
+      let data;
+      if (response && response.ok) {
+        data = await response.json();
+      } else {
+        // If we have a response but it's not ok, try to get the error message
+        if (response) {
+          try {
+            const errorData = await response.json();
+            if (errorData.error) {
+              throw new Error(errorData.error);
+            }
+          } catch (e) {
+            // Ignore parse error
+          }
+        }
+        
+        // Fallback to client-side SDK if server is not available
+        const apiKey = process.env.GEMINI_API_KEY || '';
+        const ai = new GoogleGenAI({ apiKey });
+        const styleDescription = style === 'none' ? '' : (styles.find(s => s.id === style)?.name || style);
+        const fullPrompt = style === 'none' 
+          ? `${prompt}. ${negativePrompt ? `Avoid: ${negativePrompt}.` : ''} Aspect: ${aspectRatio}.`
+          : `${styleDescription} of: ${prompt}. ${negativePrompt ? `Avoid: ${negativePrompt}.` : ''} Aspect: ${aspectRatio}.`;
+        
+        // @ts-ignore - Using the specific image generation pattern from the app
+        data = await ai.models.generateContent({
+          model: 'gemini-2.5-flash-image',
+          contents: {
+            parts: [{ text: fullPrompt }],
+          },
+          config: {
+            candidateCount: 1,
+            imageConfig: {
+              aspectRatio: aspectRatio as any,
+            }
+          }
+        });
+      }
+      
+      // Stop loading state immediately as we have data from IA
+      setIsGenerating(false);
       
       let foundImage = false;
       const candidates = data.candidates;
@@ -145,32 +193,32 @@ export default function AIGenerator({ userRole, onOpenPricing, onNavigate }: AIG
             // Hide success message after 3 seconds
             setTimeout(() => setShowSuccess(false), 3000);
 
-            // Increment usage
-            await usageService.incrementUsage(userRole || 'free');
+            // Increment usage and save in background to not block UI
+            usageService.incrementUsage(userRole || 'free', 'generate');
 
-            // Save to Firestore and Storage
             if (auth.currentUser) {
               const fileName = `AI_Gen_${Date.now()}.png`;
-              const storageUrl = await uploadImageToStorage(resultUrl, fileName, `users/${auth.currentUser.uid}/generated`);
+              // We don't await these to allow the UI to be responsive immediately
+              uploadImageToStorage(resultUrl, fileName, `users/${auth.currentUser.uid}/generated`).then(async (storageUrl) => {
+                const path = 'projects';
+                try {
+                  const docRef = await addDoc(collection(db, path), {
+                    id: Date.now().toString(),
+                    uid: auth.currentUser!.uid,
+                    name: `Geração IA: ${prompt.substring(0, 20)}...`,
+                    date: new Date().toISOString().split('T')[0],
+                    createdAt: serverTimestamp(),
+                    status: 'Finalizado',
+                    type: 'Geração de Imagem',
+                    imageUrl: storageUrl,
+                    prompt: prompt
+                  });
 
-              const path = 'projects';
-              try {
-                const docRef = await addDoc(collection(db, path), {
-                  id: Date.now().toString(),
-                  uid: auth.currentUser.uid,
-                  name: `Geração IA: ${prompt.substring(0, 20)}...`,
-                  date: new Date().toISOString().split('T')[0],
-                  createdAt: serverTimestamp(),
-                  status: 'Finalizado',
-                  type: 'Geração de Imagem',
-                  imageUrl: storageUrl,
-                  prompt: prompt
-                });
-
-                setGenerationHistory(prev => [{id: docRef.id, url: resultUrl, prompt: prompt}, ...prev].slice(0, 20));
-              } catch (error) {
-                handleFirestoreError(error, OperationType.WRITE, path);
-              }
+                  setGenerationHistory(prev => [{id: docRef.id, url: resultUrl, prompt: prompt}, ...prev].slice(0, 20));
+                } catch (error) {
+                  handleFirestoreError(error, OperationType.WRITE, path);
+                }
+              }).catch(err => console.error("Error uploading generated image:", err));
             } else {
               // Fallback for non-logged in users
               setGenerationHistory(prev => [{id: Date.now().toString(), url: resultUrl, prompt: prompt}, ...prev].slice(0, 20));
@@ -181,14 +229,49 @@ export default function AIGenerator({ userRole, onOpenPricing, onNavigate }: AIG
       }
 
       if (!foundImage) {
-        alert("A IA não conseguiu gerar a imagem. Tente um prompt diferente.");
+        setError("A IA não conseguiu gerar a imagem. Tente um prompt diferente.");
       }
 
-    } catch (error) {
+    } catch (error: any) {
       console.error("Error generating image:", error);
-      alert("Erro ao gerar imagem. Verifique sua conexão ou tente novamente mais tarde.");
+      setError(error.message || "Erro ao gerar imagem. Verifique sua conexão ou tente novamente mais tarde.");
     } finally {
       setIsGenerating(false);
+    }
+  };
+
+  const handleRefinePrompt = async () => {
+    if (!prompt.trim()) return;
+    
+    setIsRefining(true);
+    setError(null);
+    try {
+      const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY || '' });
+      
+      const systemPrompt = `Você é um especialista em engenharia de prompts para geração de imagens. 
+      O usuário fornecerá uma ideia básica e você deve sugerir 3 variações aprimoradas, mais detalhadas e artísticas.
+      Mantenha as sugestões em Português, a menos que o prompt original esteja em Inglês.
+      Retorne APENAS as 3 sugestões separadas por uma linha em branco. Não inclua introduções ou explicações.`;
+
+      const response = await ai.models.generateContent({
+        model: "gemini-2.0-flash",
+        contents: {
+          parts: [
+            { text: systemPrompt },
+            { text: prompt }
+          ]
+        }
+      });
+
+      const text = response.candidates?.[0]?.content?.parts?.[0]?.text || "";
+      
+      const refinedSuggestions = text.split('\n\n').map(s => s.trim()).filter(s => s.length > 0).slice(0, 3);
+      setSuggestions(refinedSuggestions);
+    } catch (err: any) {
+      console.error("Error refining prompt:", err);
+      setError("Não foi possível refinar o prompt no momento.");
+    } finally {
+      setIsRefining(false);
     }
   };
 
@@ -229,7 +312,58 @@ export default function AIGenerator({ userRole, onOpenPricing, onNavigate }: AIG
                   placeholder="Ex: Um astronauta andando a cavalo em Marte, estilo cyberpunk, luzes neon..."
                   className="relative w-full h-40 p-5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl focus:ring-2 focus:ring-indigo-600/20 focus:border-indigo-600 outline-none transition-all resize-none text-sm sm:text-base text-slate-900 dark:text-white placeholder:text-slate-400 dark:placeholder:text-slate-600 shadow-sm"
                 />
+                <button
+                  onClick={handleRefinePrompt}
+                  disabled={isRefining || !prompt.trim()}
+                  className="absolute bottom-4 right-4 p-2 bg-indigo-600/10 hover:bg-indigo-600 text-indigo-600 hover:text-white rounded-xl transition-all flex items-center gap-2 text-[10px] font-black uppercase tracking-widest disabled:opacity-50"
+                  title="Refinar Prompt com IA"
+                >
+                  {isRefining ? (
+                    <RefreshCw size={14} className="animate-spin" />
+                  ) : (
+                    <Wand2 size={14} />
+                  )}
+                  {isRefining ? 'Refinando...' : 'Refinar'}
+                </button>
               </div>
+
+              <AnimatePresence>
+                {suggestions.length > 0 && (
+                  <motion.div
+                    initial={{ opacity: 0, height: 0 }}
+                    animate={{ opacity: 1, height: 'auto' }}
+                    exit={{ opacity: 0, height: 0 }}
+                    className="space-y-2 overflow-hidden"
+                  >
+                    <div className="flex items-center justify-between px-1">
+                      <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Sugestões da IA</span>
+                      <button 
+                        onClick={() => setSuggestions([])}
+                        className="text-[10px] font-black text-slate-400 hover:text-red-500 uppercase tracking-widest"
+                      >
+                        Limpar
+                      </button>
+                    </div>
+                    <div className="space-y-2">
+                      {suggestions.map((suggestion, idx) => (
+                        <motion.button
+                          key={idx}
+                          initial={{ opacity: 0, x: -10 }}
+                          animate={{ opacity: 1, x: 0 }}
+                          transition={{ delay: idx * 0.1 }}
+                          onClick={() => {
+                            setPrompt(suggestion);
+                            setSuggestions([]);
+                          }}
+                          className="w-full p-3 text-left text-xs bg-indigo-50 dark:bg-indigo-900/20 hover:bg-indigo-100 dark:hover:bg-indigo-900/40 border border-indigo-100 dark:border-indigo-900/50 rounded-xl text-indigo-900 dark:text-indigo-200 transition-all line-clamp-2"
+                        >
+                          {suggestion}
+                        </motion.button>
+                      ))}
+                    </div>
+                  </motion.div>
+                )}
+              </AnimatePresence>
             </div>
 
             <div className="space-y-3">
@@ -290,6 +424,40 @@ export default function AIGenerator({ userRole, onOpenPricing, onNavigate }: AIG
                 </>
               )}
             </motion.button>
+
+            {/* Small Preview Area (Requested by user) */}
+            {generatedImage && (
+              <motion.div 
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                className="p-4 bg-slate-50 dark:bg-slate-900/50 rounded-2xl border border-slate-200 dark:border-slate-800 space-y-3"
+              >
+                <div className="flex items-center justify-between">
+                  <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Resultado Atual</span>
+                  <button 
+                    onClick={handleDownload}
+                    className="p-1.5 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors shadow-lg shadow-indigo-500/20"
+                    title="Baixar Imagem"
+                  >
+                    <Download size={14} />
+                  </button>
+                </div>
+                <div className="relative aspect-square rounded-xl overflow-hidden border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900">
+                  <img 
+                    src={generatedImage} 
+                    alt="Current Result" 
+                    className="w-full h-full object-cover"
+                    referrerPolicy="no-referrer"
+                  />
+                </div>
+                <button
+                  onClick={() => onNavigate?.('editor', generatedImage)}
+                  className="w-full py-2 bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-200 rounded-xl text-[10px] font-bold uppercase tracking-widest hover:bg-slate-300 dark:hover:bg-slate-700 transition-all"
+                >
+                  Abrir no Editor
+                </button>
+              </motion.div>
+            )}
           </div>
         </div>
 
@@ -306,6 +474,17 @@ export default function AIGenerator({ userRole, onOpenPricing, onNavigate }: AIG
                 >
                   <CheckCircle2 size={16} />
                   Imagem Gerada com Sucesso!
+                </motion.div>
+              )}
+
+              {error && (
+                <motion.div
+                  initial={{ opacity: 0, y: -20 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  className="absolute top-8 left-1/2 -translate-x-1/2 z-20 bg-red-500 text-white px-6 py-3 rounded-full font-black text-xs uppercase tracking-widest shadow-xl flex items-center gap-2"
+                >
+                  <X size={16} />
+                  {error}
                 </motion.div>
               )}
 

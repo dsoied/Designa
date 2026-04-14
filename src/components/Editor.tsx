@@ -1,7 +1,7 @@
 import { ZoomIn, ZoomOut, Undo, Redo, Eraser, Brush, Download, Maximize2, Upload, Plus, RotateCcw, Sparkles, Sliders, Layers, Crop, Wand2, User, Image as ImageIcon, Camera, Sun, Moon, Palette, Film, Grid3x3, AlignCenter, RotateCw, Zap, Layout, Square, Smartphone, Monitor, Crown, RefreshCw } from 'lucide-react';
 import React, { useState, useEffect, useRef, ChangeEvent } from 'react';
 import { motion } from 'motion/react';
-import { GoogleGenAI, ThinkingLevel } from "@google/genai";
+import { GoogleGenAI } from "@google/genai";
 import { db, auth, addDoc, collection, storage, ref, uploadString, getDownloadURL, serverTimestamp, uploadImageToStorage, handleFirestoreError, OperationType } from '../firebase';
 import { usageService } from '../services/usageService';
 import { WelcomeTour } from './WelcomeTour';
@@ -23,7 +23,7 @@ export function Editor({ imageUrl, onNavigate, initialTool = 'background', userR
   const [brushSize, setBrushSize] = useState(24);
   const [sensitivity, setSensitivity] = useState(75);
   const [quality, setQuality] = useState(100);
-  const [mode, setMode] = useState<'erase' | 'restore'>('erase');
+  const [mode, setMode] = useState<'erase' | 'restore' | 'keep'>('erase');
   const [activeTool, setActiveTool] = useState<'background' | 'object' | 'upscale' | 'face' | 'filters' | 'crop' | 'layers' | 'magic' | 'outpaint' | 'variations'>(initialTool);
   const [refinement, setRefinement] = useState<'suave' | 'medio' | 'nitido'>('medio');
   const [upscaleLevel, setUpscaleLevel] = useState<'2K' | '4K' | '8K'>('2K');
@@ -34,6 +34,7 @@ export function Editor({ imageUrl, onNavigate, initialTool = 'background', userR
   const [selectedCrop, setSelectedCrop] = useState<string>('1:1');
   const [magicInstruction, setMagicInstruction] = useState<string>('');
   const [selectedMagicPreset, setSelectedMagicPreset] = useState<string>('');
+  const [bgColor, setBgColor] = useState<string>('transparent');
   const [retryCount, setRetryCount] = useState<number>(0);
 
   const filters = [
@@ -85,6 +86,24 @@ export function Editor({ imageUrl, onNavigate, initialTool = 'background', userR
     setActiveTool(initialTool);
   }, [initialTool]);
 
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.code === 'Space') {
+        setIsPanning(true);
+        if (e.target === document.body) e.preventDefault();
+      }
+    };
+    const handleKeyUp = (e: KeyboardEvent) => {
+      if (e.code === 'Space') setIsPanning(false);
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    window.addEventListener('keyup', handleKeyUp);
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+      window.removeEventListener('keyup', handleKeyUp);
+    };
+  }, []);
+
   // Use state for display image to ensure it updates correctly
   const [displayImage, setDisplayImage] = useState<string>(imageUrl || "");
   const [initialImage, setInitialImage] = useState<string>(imageUrl || "");
@@ -97,12 +116,18 @@ export function Editor({ imageUrl, onNavigate, initialTool = 'background', userR
   const [showKeyPrompt, setShowKeyPrompt] = useState(false);
   const [keyPromptReason, setKeyPromptReason] = useState<'high-quality' | 'quota-exceeded'>('high-quality');
   const [isDragging, setIsDragging] = useState(false);
+  const [isPanning, setIsPanning] = useState(false);
+  const [panOffset, setPanOffset] = useState({ x: 0, y: 0 });
+  const [lastMousePos, setLastMousePos] = useState({ x: 0, y: 0 });
+  const [zoom, setZoom] = useState(1);
+  const [isDrawing, setIsDrawing] = useState(false);
+  const [mousePos, setMousePos] = useState({ x: 0, y: 0 });
   const [sliderPosition, setSliderPosition] = useState(50);
   const [history, setHistory] = useState<string[]>(imageUrl ? [imageUrl] : []);
   const [historyIndex, setHistoryIndex] = useState(0);
   const [imageMetadata, setImageMetadata] = useState<{ width: number, height: number, size: string }>({ width: 0, height: 0, size: '0KB' });
-  const [mousePos, setMousePos] = useState({ x: 0, y: 0 });
   const [showWelcomeTour, setShowWelcomeTour] = useState(false);
+  const [isMouseOverImage, setIsMouseOverImage] = useState(false);
 
   useEffect(() => {
     const hasSeenTour = localStorage.getItem('designa_editor_tour_seen');
@@ -115,9 +140,6 @@ export function Editor({ imageUrl, onNavigate, initialTool = 'background', userR
     localStorage.setItem('designa_editor_tour_seen', 'true');
     setShowWelcomeTour(false);
   };
-  const [isMouseOverImage, setIsMouseOverImage] = useState(false);
-  const [isDrawing, setIsDrawing] = useState(false);
-  const [zoom, setZoom] = useState(1);
 
   const maskCanvasRef = useRef<HTMLCanvasElement>(null);
 
@@ -263,9 +285,9 @@ export function Editor({ imageUrl, onNavigate, initialTool = 'background', userR
     }
 
     // Usage check for free users
-    const usage = await usageService.checkUsage(userRole || 'free');
+    const usage = await usageService.checkUsage(userRole || 'free', activeTool);
     if (!usage.allowed) {
-      console.log('Editor: Limite de uso diário atingido para plano gratuito');
+      console.log(`Editor: Limite de uso diário atingido para o recurso "${activeTool}" no plano gratuito`);
       onOpenPricing?.();
       return;
     }
@@ -298,7 +320,8 @@ export function Editor({ imageUrl, onNavigate, initialTool = 'background', userR
     }
     
     try {
-      const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+      const apiKey = process.env.GEMINI_API_KEY || '';
+      const ai = new GoogleGenAI({ apiKey });
       
       // Resize image if it's too large to save quota/bandwidth
       let finalBase64Data = displayImage.split(',')[1];
@@ -347,11 +370,7 @@ export function Editor({ imageUrl, onNavigate, initialTool = 'background', userR
       let config: any = {};
 
       let prompt = "";
-      if (activeTool === 'background') {
-        prompt = `Act as an expert AI image segmentation engine. Your goal is to perform a high-precision background removal. Detect the primary subject and isolate it perfectly. 
-        Sensitivity: ${sensitivity}%. Refinement: ${refinement}.
-        Output ONLY the resulting image as a base64-encoded PNG with transparency (alpha channel). The background must be completely transparent. Do not provide any text, markdown, or conversational response. Just the image data.`;
-      } else if (activeTool === 'object') {
+      if (activeTool === 'background' || activeTool === 'object') {
         // Create a temporary canvas to merge image and mask
         const tempCanvas = document.createElement('canvas');
         const img = new Image();
@@ -366,7 +385,7 @@ export function Editor({ imageUrl, onNavigate, initialTool = 'background', userR
           // Draw original image
           tempCtx.drawImage(img, 0, 0);
           
-          // Create a filtered mask canvas (keep only RED pixels)
+          // Create a filtered mask canvas
           const maskCanvas = maskCanvasRef.current;
           const filteredMaskCanvas = document.createElement('canvas');
           filteredMaskCanvas.width = maskCanvas.width;
@@ -378,45 +397,74 @@ export function Editor({ imageUrl, onNavigate, initialTool = 'background', userR
             const imageData = fCtx.getImageData(0, 0, filteredMaskCanvas.width, filteredMaskCanvas.height);
             const data = imageData.data;
             
-            // Filter: Keep only pixels where RED is dominant and GREEN is absent
-            // This ensures that "Restaurar" (Green) effectively cancels "Apagar" (Red)
+            let hasMask = false;
             for (let i = 0; i < data.length; i += 4) {
-              const r = data[i];
-              const g = data[i + 1];
-              const b = data[i + 2];
-              
-              // If there's any significant green, it's a "Restore" area - make it transparent
-              // Also if it's not red enough, make it transparent
-              if (g > 20 || r < 100) {
-                data[i + 3] = 0; // Alpha = 0 (Transparent)
-              } else {
-                // Ensure it's pure solid red for the AI to detect easily
-                data[i] = 255;
-                data[i + 1] = 0;
-                data[i + 2] = 0;
-                data[i + 3] = 255; // Full opacity for the mask sent to AI
+              if (data[i + 3] > 0) {
+                hasMask = true;
+                break;
               }
             }
-            fCtx.putImageData(imageData, 0, 0);
-            
-            // Draw filtered mask from the drawing canvas (scaled to image size)
-            tempCtx.globalAlpha = 1.0;
-            tempCtx.drawImage(filteredMaskCanvas, 0, 0, tempCanvas.width, tempCanvas.height);
+
+            if (hasMask) {
+              // For Object removal, we only care about RED. 
+              // For Background removal, we care about RED (Background) and GREEN (Foreground).
+              for (let i = 0; i < data.length; i += 4) {
+                const r = data[i];
+                const g = data[i + 1];
+                const b = data[i + 2];
+                const a = data[i + 3];
+                
+                if (a > 0) {
+                  if (activeTool === 'object') {
+                    // Object removal: Only red matters.
+                    data[i] = 255;
+                    data[i + 1] = 0;
+                    data[i + 2] = 0;
+                    data[i + 3] = 255;
+                  } else {
+                    // Background removal: Keep Red as Red, Green as Green.
+                    if (r > g && r > 100) {
+                      data[i] = 255; data[i+1] = 0; data[i+2] = 0;
+                    } else if (g > r && g > 100) {
+                      data[i] = 0; data[i+1] = 255; data[i+2] = 0;
+                    }
+                    data[i + 3] = 255;
+                  }
+                }
+              }
+              fCtx.putImageData(imageData, 0, 0);
+              
+              // Draw filtered mask onto image
+              tempCtx.globalAlpha = 0.7; // Make it semi-transparent so AI sees both
+              tempCtx.drawImage(filteredMaskCanvas, 0, 0, tempCanvas.width, tempCanvas.height);
+              
+              const mergedDataUrl = tempCanvas.toDataURL('image/png');
+              finalBase64Data = mergedDataUrl.split(',')[1];
+              finalMimeType = 'image/png';
+            }
           }
           
-          const mergedDataUrl = tempCanvas.toDataURL('image/png');
-          finalBase64Data = mergedDataUrl.split(',')[1];
-          finalMimeType = 'image/png';
-          
-          // Clear mask after merging for next edit
+          // Clear mask after merging
           clearMask();
         }
 
-        prompt = `Act as an expert AI image retouching engine. Your goal is to perform high-precision object removal (inpainting). 
-        I have marked the object to be removed in RED on the provided image. 
-        Please remove the area marked in RED and fill it seamlessly with the surrounding background.
-        Output ONLY the resulting image as a base64-encoded PNG. 
-        CRITICAL: DO NOT provide any text, markdown, or conversational response. If you understand, return ONLY the image data.`;
+        if (activeTool === 'background') {
+          prompt = `Act as an expert AI image segmentation engine. Your goal is to perform a high-precision background removal. 
+          I have provided hints on the image:
+          - Areas marked in RED are BACKGROUND (to be removed).
+          - Areas marked in GREEN are FOREGROUND (to be kept).
+          If no markings are present, detect the primary subject automatically.
+          
+          Sensitivity: ${sensitivity}%. Refinement: ${refinement}.
+          Output ONLY the resulting image as a base64-encoded PNG. ${bgColor === 'transparent' ? 'The background must be completely transparent (alpha channel).' : `Replace the background with a solid ${bgColor} color.`}
+          Do not provide any text, markdown, or conversational response. Just the image data.`;
+        } else {
+          prompt = `Act as an expert AI image retouching engine. Your goal is to perform high-precision object removal (inpainting). 
+          I have marked the object to be removed in RED on the provided image. 
+          Please remove the area marked in RED and fill it seamlessly with the surrounding background.
+          Output ONLY the resulting image as a base64-encoded PNG. 
+          CRITICAL: DO NOT provide any text, markdown, or conversational response. If you understand, return ONLY the image data.`;
+        }
       } else if (activeTool === 'upscale') {
         prompt = `Act as a world-class AI Super-Resolution and Image Restoration engine. 
         Your task is to perform an EXTREME high-fidelity upscale to ${upscaleLevel} resolution.
@@ -526,10 +574,7 @@ export function Editor({ imageUrl, onNavigate, initialTool = 'background', userR
           ],
         },
         config: {
-          candidateCount: 1,
-          thinkingConfig: {
-            thinkingLevel: ThinkingLevel.LOW
-          }
+          candidateCount: 1
         }
       });
 
@@ -551,7 +596,7 @@ export function Editor({ imageUrl, onNavigate, initialTool = 'background', userR
             console.log('Editor: Sucesso! Imagem recebida.');
 
             // Increment usage
-            await usageService.incrementUsage(userRole || 'free');
+            await usageService.incrementUsage(userRole || 'free', activeTool);
 
             // Save to Firestore and Storage if user is logged in
             if (auth.currentUser) {
@@ -765,93 +810,102 @@ export function Editor({ imageUrl, onNavigate, initialTool = 'background', userR
     
     setMousePos({ x, y });
 
-    if (activeTool === 'object' && isDrawing && maskCanvasRef.current) {
+    if (isPanning && isDrawing) {
+      const dx = e.clientX - lastMousePos.x;
+      const dy = e.clientY - lastMousePos.y;
+      setPanOffset(prev => ({ x: prev.x + dx, y: prev.y + dy }));
+      setLastMousePos({ x: e.clientX, y: e.clientY });
+      return;
+    }
+
+    if ((activeTool === 'object' || activeTool === 'background') && isDrawing && maskCanvasRef.current && !isPanning) {
       const canvas = maskCanvasRef.current;
       const ctx = canvas.getContext('2d');
       if (ctx) {
-        // Calculate coordinates relative to the canvas's internal resolution
         const scaleX = canvas.width / rect.width;
         const scaleY = canvas.height / rect.height;
-        
         const canvasX = x * scaleX;
         const canvasY = y * scaleY;
         const scaledBrushSize = brushSize * scaleX;
 
-        // Main line
         ctx.save();
-        
-        // Color based on mode: Red for Erase (Remove), Green for Restore
-        const color = mode === 'erase' ? '255, 0, 0' : '34, 197, 94'; // Red vs Green (Tailwind green-500)
-        
-        ctx.strokeStyle = `rgba(${color}, 0.2)`; 
-        ctx.lineWidth = scaledBrushSize;
-        ctx.lineCap = 'round';
-        ctx.lineJoin = 'round';
-        
-        // Glow effect
-        ctx.shadowBlur = scaledBrushSize / 2;
-        ctx.shadowColor = `rgba(${color}, 0.5)`;
-        
-        ctx.lineTo(canvasX, canvasY);
-        ctx.stroke();
-        ctx.restore();
-        
-        // Spray particles effect
-        const density = Math.floor(brushSize / 2); 
-        for (let i = 0; i < density; i++) {
-          const angle = Math.random() * Math.PI * 2;
-          const radius = Math.random() * (scaledBrushSize / 2);
-          const particleX = canvasX + Math.cos(angle) * radius;
-          const particleY = canvasY + Math.sin(angle) * radius;
+        if (mode === 'restore') {
+          ctx.globalCompositeOperation = 'destination-out';
+          ctx.strokeStyle = 'rgba(0,0,0,1)';
+          ctx.lineWidth = scaledBrushSize;
+          ctx.lineCap = 'round';
+          ctx.lineJoin = 'round';
+          ctx.lineTo(canvasX, canvasY);
+          ctx.stroke();
+        } else {
+          const isKeep = mode === 'keep';
+          const color = isKeep ? '34, 197, 94' : '255, 0, 0'; // Green for Keep, Red for Remove
           
-          const opacity = Math.random() * 0.3;
-          const size = Math.random() * (scaledBrushSize / 15) + 1;
+          // High-precision solid brush with soft edges
+          ctx.strokeStyle = `rgba(${color}, 0.4)`; 
+          ctx.lineWidth = scaledBrushSize;
+          ctx.lineCap = 'round';
+          ctx.lineJoin = 'round';
+          ctx.shadowBlur = scaledBrushSize / 4;
+          ctx.shadowColor = `rgba(${color}, 0.6)`;
+          ctx.lineTo(canvasX, canvasY);
+          ctx.stroke();
           
-          ctx.beginPath();
-          ctx.arc(particleX, particleY, size, 0, Math.PI * 2);
-          ctx.fillStyle = `rgba(${color}, ${opacity})`;
-          ctx.fill();
+          // Add some density for the "Pro" feel
+          const density = Math.floor(brushSize / 2);
+          for (let i = 0; i < density; i++) {
+            const angle = Math.random() * Math.PI * 2;
+            const radius = Math.random() * (scaledBrushSize / 2.5);
+            const px = canvasX + Math.cos(angle) * radius;
+            const py = canvasY + Math.sin(angle) * radius;
+            ctx.beginPath();
+            ctx.arc(px, py, Math.random() * 2 + 1, 0, Math.PI * 2);
+            ctx.fillStyle = `rgba(${color}, ${Math.random() * 0.3 + 0.2})`;
+            ctx.fill();
+          }
         }
+        ctx.restore();
       }
     }
   };
 
   const handleMouseDown = (e: React.MouseEvent) => {
     if (e.button !== 0) return; // Only left click
-    if (activeTool === 'object' && maskCanvasRef.current) {
+    
+    if (isPanning) {
+      setIsDrawing(true);
+      setLastMousePos({ x: e.clientX, y: e.clientY });
+      return;
+    }
+
+    if ((activeTool === 'object' || activeTool === 'background') && maskCanvasRef.current) {
       setIsDrawing(true);
       const canvas = maskCanvasRef.current;
       const rect = e.currentTarget.getBoundingClientRect();
       const scaleX = canvas.width / rect.width;
       const scaleY = canvas.height / rect.height;
-      
       const x = (e.clientX - rect.left) * scaleX;
       const y = (e.clientY - rect.top) * scaleY;
       
       const ctx = canvas.getContext('2d');
       if (ctx) {
-        ctx.beginPath();
-        ctx.moveTo(x, y);
-        
-        const color = mode === 'erase' ? '255, 0, 0' : '34, 197, 94';
         const scaledBrushSize = brushSize * scaleX;
-        const density = Math.floor(brushSize);
-        
-        // Initial spray burst
-        for (let i = 0; i < density; i++) {
-          const angle = Math.random() * Math.PI * 2;
-          const radius = Math.random() * (scaledBrushSize / 2);
-          const particleX = x + Math.cos(angle) * radius;
-          const particleY = y + Math.sin(angle) * radius;
-          
-          const opacity = Math.random() * 0.4;
-          const size = Math.random() * (scaledBrushSize / 12) + 1;
-          
+        ctx.save();
+        if (mode === 'restore') {
+          ctx.globalCompositeOperation = 'destination-out';
           ctx.beginPath();
-          ctx.arc(particleX, particleY, size, 0, Math.PI * 2);
-          ctx.fillStyle = `rgba(${color}, ${opacity})`;
+          ctx.arc(x, y, scaledBrushSize / 2, 0, Math.PI * 2);
+          ctx.fill();
+        } else {
+          const isKeep = mode === 'keep';
+          const color = isKeep ? '34, 197, 94' : '255, 0, 0';
+          ctx.beginPath();
+          ctx.moveTo(x, y);
+          ctx.fillStyle = `rgba(${color}, 0.5)`;
+          ctx.arc(x, y, scaledBrushSize / 2, 0, Math.PI * 2);
           ctx.fill();
         }
+        ctx.restore();
       }
     }
   };
@@ -967,6 +1021,7 @@ export function Editor({ imageUrl, onNavigate, initialTool = 'background', userR
           </div>
           <div className="flex flex-wrap gap-2 w-full sm:w-auto">
             <motion.button 
+              initial={{ backgroundColor: "rgba(255, 255, 255, 0)" }}
               whileHover={{ scale: 1.05, backgroundColor: "rgba(248, 250, 252, 1)" }}
               whileTap={{ scale: 0.95 }}
               onClick={handleUploadClick}
@@ -997,17 +1052,6 @@ export function Editor({ imageUrl, onNavigate, initialTool = 'background', userR
                 }`}
               >
                 Resultado
-              </motion.button>
-              <motion.button 
-                whileTap={{ scale: 0.95 }}
-                onClick={() => setViewMode('compare')}
-                className={`flex-1 sm:flex-none px-4 py-1.5 text-xs font-bold rounded-lg transition-all ${
-                  viewMode === 'compare' 
-                    ? 'bg-white dark:bg-slate-700 shadow-sm text-indigo-600 dark:text-indigo-400' 
-                    : 'text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
-                }`}
-              >
-                Comparar
               </motion.button>
             </div>
           </div>
@@ -1076,108 +1120,34 @@ export function Editor({ imageUrl, onNavigate, initialTool = 'background', userR
                       className="max-w-full max-h-full object-contain shadow-2xl rounded-lg"
                       referrerPolicy="no-referrer"
                     />
-                  ) : viewMode === 'result' ? (
-                    <div className="relative w-full h-full flex items-center justify-center">
-                      <img 
-                        src={processedImage || displayImage} 
-                        alt="Resultado" 
-                        className={`max-w-full max-h-full object-contain shadow-2xl rounded-lg ${!processedImage ? 'opacity-50 grayscale' : ''}`}
-                        referrerPolicy="no-referrer"
-                      />
-                      {!processedImage && (
-                        <div className="absolute inset-0 flex items-center justify-center z-50">
-                          <p className="bg-black/60 text-white px-4 py-2 rounded-full text-xs font-bold backdrop-blur-sm">
-                            Clique em "Aplicar" para ver o resultado
-                          </p>
-                        </div>
-                      )}
-                    </div>
                   ) : (
-                    <div className="relative w-full h-full flex items-center justify-center">
-                      {/* Comparison Slider Container */}
-                      <div className="relative w-full h-full max-w-4xl bg-white dark:bg-slate-900 rounded-2xl shadow-2xl overflow-hidden shadow-indigo-500/10">
-                        <div className="absolute inset-0 checkerboard"></div>
-                        
-                        {/* Background: Processed Image */}
-                        <div className="absolute inset-0 flex items-center justify-center p-4 md:p-8">
-                          <img 
-                            src={processedImage || displayImage} 
-                            alt="Processed" 
-                            className={`max-w-full max-h-full object-contain ${!processedImage ? 'opacity-50 grayscale' : ''}`}
-                            referrerPolicy="no-referrer"
-                          />
-                        </div>
-                        
-                        {/* Foreground: Original Image (Clipped) */}
-                        <div 
-                          className="absolute inset-0 z-20 overflow-hidden pointer-events-none"
-                          style={{ clipPath: `inset(0 ${100 - sliderPosition}% 0 0)` }}
-                        >
-                          <div className="absolute inset-0 flex items-center justify-center p-4 md:p-8">
-                            <img 
-                              src={initialImage} 
-                              alt="Original" 
-                              className="max-w-full max-h-full object-contain"
-                              referrerPolicy="no-referrer"
-                            />
+                    <div className="relative w-full h-full flex items-center justify-center overflow-hidden">
+                      <div 
+                        className="relative transition-transform duration-200 ease-out"
+                        style={{ 
+                          transform: `scale(${zoom}) translate(${panOffset.x / zoom}px, ${panOffset.y / zoom}px)`,
+                          cursor: isPanning ? 'grab' : 'crosshair'
+                        }}
+                      >
+                        <img 
+                          src={processedImage || displayImage} 
+                          alt="Resultado" 
+                          className={`max-w-full max-h-full object-contain shadow-2xl rounded-lg ${!processedImage ? 'opacity-50 grayscale' : ''}`}
+                          referrerPolicy="no-referrer"
+                        />
+                        {!processedImage && (
+                          <div className="absolute inset-0 flex items-center justify-center z-50">
+                            <p className="bg-black/60 text-white px-4 py-2 rounded-full text-xs font-bold backdrop-blur-sm">
+                              Clique em "Aplicar" para ver o resultado
+                            </p>
                           </div>
-                          {/* Vertical Line at the edge of clip */}
-                          <div 
-                            className="absolute top-0 bottom-0 right-0 w-0.5 bg-white shadow-[0_0_10px_rgba(0,0,0,0.3)]"
-                          />
-                        </div>
-
-                        {/* Slider Handle (Invisible overlay for better hit area) */}
-                        <div 
-                          className="absolute top-0 bottom-0 z-30 w-12 -ml-6 cursor-col-resize flex items-center justify-center touch-none"
-                          style={{ left: `${sliderPosition}%` }}
-                          onMouseDown={(e) => {
-                            const handleMove = (clientX: number) => {
-                              const container = e.currentTarget.parentElement;
-                              if (container) {
-                                const rect = container.getBoundingClientRect();
-                                const x = clientX - rect.left;
-                                const pos = Math.max(0, Math.min(100, (x / rect.width) * 100));
-                                setSliderPosition(pos);
-                              }
-                            };
-                            const onMouseMove = (moveEvent: MouseEvent) => handleMove(moveEvent.clientX);
-                            const onMouseUp = () => {
-                              window.removeEventListener('mousemove', onMouseMove);
-                              window.removeEventListener('mouseup', onMouseUp);
-                            };
-                            window.addEventListener('mousemove', onMouseMove);
-                            window.addEventListener('mouseup', onMouseUp);
-                          }}
-                          onTouchStart={(e) => {
-                            const handleMove = (clientX: number) => {
-                              const container = e.currentTarget.parentElement;
-                              if (container) {
-                                const rect = container.getBoundingClientRect();
-                                const x = clientX - rect.left;
-                                const pos = Math.max(0, Math.min(100, (x / rect.width) * 100));
-                                setSliderPosition(pos);
-                              }
-                            };
-                            const onTouchMove = (moveEvent: TouchEvent) => handleMove(moveEvent.touches[0].clientX);
-                            const onTouchEnd = () => {
-                              window.removeEventListener('touchmove', onTouchMove);
-                              window.removeEventListener('touchend', onTouchEnd);
-                            };
-                            window.addEventListener('touchmove', onTouchMove);
-                            window.addEventListener('touchend', onTouchEnd);
-                          }}
-                        >
-                          <div className="w-8 h-8 md:w-10 md:h-10 bg-white rounded-full shadow-2xl flex items-center justify-center text-indigo-600 border border-slate-200">
-                            <Maximize2 size={16} className="rotate-45" />
-                          </div>
-                        </div>
+                        )}
                       </div>
                     </div>
                   )}
 
                   {/* Mask Drawing Canvas */}
-                  {activeTool === 'object' && (
+                  {(activeTool === 'object' || activeTool === 'background') && (
                     <div className="absolute inset-0 flex items-center justify-center p-4 md:p-8 pointer-events-none z-20">
                       <canvas 
                         ref={maskCanvasRef}
@@ -1215,6 +1185,7 @@ export function Editor({ imageUrl, onNavigate, initialTool = 'background', userR
           {/* Floating Controls */}
           <div id="editor-actions" className="absolute bottom-4 md:bottom-8 left-1/2 -translate-x-1/2 flex items-center gap-1 md:gap-2 bg-white/80 dark:bg-slate-900/80 backdrop-blur-xl p-1.5 md:p-2 rounded-2xl shadow-2xl border border-white/20 dark:border-slate-800/20 z-40 w-[90%] sm:w-auto justify-center">
             <motion.button 
+              initial={{ backgroundColor: "rgba(255, 255, 255, 0)" }}
               whileHover={{ scale: 1.1, backgroundColor: "rgba(241, 245, 249, 1)" }}
               whileTap={{ scale: 0.9 }}
               onClick={handleZoom}
@@ -1226,6 +1197,7 @@ export function Editor({ imageUrl, onNavigate, initialTool = 'background', userR
             </motion.button>
             <div className="w-px h-6 bg-slate-200 dark:bg-slate-800 mx-0.5 md:mx-1"></div>
             <motion.button 
+              initial={{ backgroundColor: "rgba(255, 255, 255, 0)" }}
               whileHover={{ scale: 1.1, backgroundColor: "rgba(241, 245, 249, 1)" }}
               whileTap={{ scale: 0.9 }}
               onClick={handleUploadClick}
@@ -1237,6 +1209,7 @@ export function Editor({ imageUrl, onNavigate, initialTool = 'background', userR
             </motion.button>
             <div className="w-px h-6 bg-slate-200 dark:bg-slate-800 mx-0.5 md:mx-1"></div>
             <motion.button 
+              initial={{ backgroundColor: "rgba(255, 255, 255, 0)" }}
               whileHover={historyIndex !== 0 ? { scale: 1.1, backgroundColor: "rgba(241, 245, 249, 1)" } : {}}
               whileTap={historyIndex !== 0 ? { scale: 0.9 } : {}}
               onClick={handleUndo}
@@ -1248,6 +1221,7 @@ export function Editor({ imageUrl, onNavigate, initialTool = 'background', userR
               <span className="text-[8px] font-bold uppercase sm:hidden">Desfazer</span>
             </motion.button>
             <motion.button 
+              initial={{ backgroundColor: "rgba(255, 255, 255, 0)" }}
               whileHover={historyIndex !== history.length - 1 ? { scale: 1.1, backgroundColor: "rgba(241, 245, 249, 1)" } : {}}
               whileTap={historyIndex !== history.length - 1 ? { scale: 0.9 } : {}}
               onClick={handleRedo}
@@ -1284,6 +1258,34 @@ export function Editor({ imageUrl, onNavigate, initialTool = 'background', userR
 
       {/* Right Side Tools Panel */}
       <aside id="editor-sidebar" className="w-full lg:w-80 flex flex-col gap-6 overflow-y-auto max-h-[calc(100vh-100px)] lg:max-h-none pr-2 custom-scrollbar">
+        {/* Current Result Preview (Requested by user) */}
+        {processedImage && (
+          <motion.div 
+            initial={{ opacity: 0, y: -10 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="bg-white dark:bg-slate-900 rounded-[2rem] p-4 shadow-xl shadow-indigo-900/5 border border-slate-200 dark:border-slate-800 space-y-3"
+          >
+            <div className="flex items-center justify-between">
+              <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Resultado Atual</span>
+              <button 
+                onClick={handleDownload}
+                className="p-1.5 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors shadow-lg shadow-indigo-500/20"
+                title="Baixar Imagem"
+              >
+                <Download size={14} />
+              </button>
+            </div>
+            <div className="relative aspect-video rounded-xl overflow-hidden border border-slate-200 dark:border-slate-800 bg-slate-100 dark:bg-slate-800">
+              <img 
+                src={processedImage} 
+                alt="Current Result" 
+                className="w-full h-full object-contain"
+                referrerPolicy="no-referrer"
+              />
+            </div>
+          </motion.div>
+        )}
+
         <div className="bg-slate-50 dark:bg-slate-900/50 rounded-[2rem] p-6 space-y-8 shadow-sm border border-slate-200 dark:border-slate-800">
           <div className="space-y-6">
             <div className="flex justify-between items-center">
@@ -1444,8 +1446,8 @@ export function Editor({ imageUrl, onNavigate, initialTool = 'background', userR
           <div>
             <h3 className="text-sm font-bold uppercase tracking-widest text-indigo-600 dark:text-indigo-400 mb-6">Recursos de Ajuste</h3>
             
-            {/* Brush Size (Only for Object tool) */}
-            {activeTool === 'object' && (
+            {/* Brush Size (For Object and Background tools) */}
+            {(activeTool === 'object' || activeTool === 'background') && (
               <div className="space-y-4 mb-8">
                 <div className="flex justify-between items-center">
                   <label className="text-sm font-semibold text-slate-900 dark:text-white">Tamanho do Pincel</label>
@@ -1763,46 +1765,69 @@ export function Editor({ imageUrl, onNavigate, initialTool = 'background', userR
             </div>
           )}
 
-          {/* Mode Toggles (Only for Object tool) */}
-          {activeTool === 'object' && (
-            <div className="grid grid-cols-2 gap-4 mb-6">
+          {/* Background Color (Only for Background tool) */}
+          {activeTool === 'background' && (
+            <div className="space-y-4 mt-8">
+              <div className="flex justify-between items-center">
+                <label className="text-sm font-semibold text-slate-900 dark:text-white">Cor de Fundo</label>
+                <span className="text-[10px] font-bold text-indigo-600 bg-indigo-50 dark:bg-indigo-900/30 px-2 py-0.5 rounded uppercase">{bgColor === 'transparent' ? 'Transparente' : bgColor}</span>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                {['transparent', 'white', 'black', 'gray', 'red', 'blue', 'green', 'yellow'].map((color) => (
+                  <button 
+                    key={color}
+                    onClick={() => setBgColor(color)}
+                    className={`w-8 h-8 rounded-full border-2 transition-all ${
+                      bgColor === color ? 'border-indigo-600 scale-110 shadow-lg' : 'border-transparent hover:scale-105'
+                    }`}
+                    style={{ 
+                      backgroundColor: color === 'transparent' ? 'transparent' : color,
+                      backgroundImage: color === 'transparent' ? 'linear-gradient(45deg, #ccc 25%, transparent 25%, transparent 75%, #ccc 75%, #ccc), linear-gradient(45deg, #ccc 25%, transparent 25%, transparent 75%, #ccc 75%, #ccc)' : 'none',
+                      backgroundSize: color === 'transparent' ? '8px 8px' : 'auto',
+                      backgroundPosition: color === 'transparent' ? '0 0, 4px 4px' : '0 0'
+                    }}
+                    title={color === 'transparent' ? 'Transparente' : color}
+                  />
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Mode Toggles (For Object and Background tools) */}
+          {(activeTool === 'object' || activeTool === 'background') && (
+            <div className="grid grid-cols-3 gap-2 mb-6 p-1 bg-slate-100 dark:bg-slate-800/50 rounded-[2rem]">
               <button 
-                onClick={() => {
-                  console.log('Editor: Mudando para modo APAGAR');
-                  setMode('erase');
-                }}
-                className={`flex flex-col items-center justify-center gap-3 p-5 md:p-6 rounded-[2rem] border-2 transition-all active:scale-90 touch-manipulation ${
+                onClick={() => setMode('erase')}
+                className={`flex flex-col items-center justify-center gap-2 py-4 rounded-3xl transition-all ${
                   mode === 'erase' 
-                    ? 'bg-red-50 dark:bg-red-900/20 border-red-500 shadow-xl shadow-red-500/20 text-red-600' 
-                    : 'bg-slate-100 dark:bg-slate-800/50 border-transparent text-slate-500 hover:bg-slate-200 dark:hover:bg-slate-800'
+                    ? 'bg-red-500 text-white shadow-lg shadow-red-500/20 scale-105' 
+                    : 'text-slate-500 hover:bg-slate-200 dark:hover:bg-slate-800'
                 }`}
               >
-                <div className={`p-3 rounded-2xl transition-colors ${mode === 'erase' ? 'bg-red-500 text-white' : 'bg-slate-200 dark:bg-slate-700'}`}>
-                  <Eraser size={28} />
-                </div>
-                <div className="text-center">
-                  <span className="block text-xs font-black uppercase tracking-wider">Apagar</span>
-                  <span className="text-[9px] font-bold opacity-60 uppercase">Remover Objeto</span>
-                </div>
+                <Eraser size={20} />
+                <span className="text-[10px] font-black uppercase tracking-wider">Remover</span>
               </button>
               <button 
-                onClick={() => {
-                  console.log('Editor: Mudando para modo RESTAURAR');
-                  setMode('restore');
-                }}
-                className={`flex flex-col items-center justify-center gap-3 p-5 md:p-6 rounded-[2rem] border-2 transition-all active:scale-90 touch-manipulation ${
-                  mode === 'restore' 
-                    ? 'bg-green-50 dark:bg-green-900/20 border-green-500 shadow-xl shadow-green-500/20 text-green-600' 
-                    : 'bg-slate-100 dark:bg-slate-800/50 border-transparent text-slate-500 hover:bg-slate-200 dark:hover:bg-slate-800'
+                onClick={() => setMode('keep')}
+                className={`flex flex-col items-center justify-center gap-2 py-4 rounded-3xl transition-all ${
+                  mode === 'keep' 
+                    ? 'bg-green-500 text-white shadow-lg shadow-green-500/20 scale-105' 
+                    : 'text-slate-500 hover:bg-slate-200 dark:hover:bg-slate-800'
                 }`}
               >
-                <div className={`p-3 rounded-2xl transition-colors ${mode === 'restore' ? 'bg-green-500 text-white' : 'bg-slate-200 dark:bg-slate-700'}`}>
-                  <Brush size={28} />
-                </div>
-                <div className="text-center">
-                  <span className="block text-xs font-black uppercase tracking-wider">Restaurar</span>
-                  <span className="text-[9px] font-bold opacity-60 uppercase">Trazer Vida</span>
-                </div>
+                <Brush size={20} />
+                <span className="text-[10px] font-black uppercase tracking-wider">Manter</span>
+              </button>
+              <button 
+                onClick={() => setMode('restore')}
+                className={`flex flex-col items-center justify-center gap-2 py-4 rounded-3xl transition-all ${
+                  mode === 'restore' 
+                    ? 'bg-slate-900 dark:bg-white text-white dark:text-slate-900 shadow-lg scale-105' 
+                    : 'text-slate-500 hover:bg-slate-200 dark:hover:bg-slate-800'
+                }`}
+              >
+                <RotateCcw size={20} />
+                <span className="text-[10px] font-black uppercase tracking-wider">Limpar</span>
               </button>
             </div>
           )}

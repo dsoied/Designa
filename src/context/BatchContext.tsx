@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useState, useCallback, useEffect } from 'react';
-import { GoogleGenAI, ThinkingLevel } from "@google/genai";
+import { GoogleGenAI } from "@google/genai";
 import { db, auth, addDoc, collection, serverTimestamp, uploadImageToStorage } from '../firebase';
 import { usageService } from '../services/usageService';
 import JSZip from 'jszip';
@@ -69,7 +69,8 @@ export function BatchProvider({ children }: { children: React.ReactNode }) {
       });
 
       const base64Data = await base64Promise;
-      const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+      const apiKey = process.env.GEMINI_API_KEY || '';
+      const ai = new GoogleGenAI({ apiKey });
       
       let prompt = "";
       if (tool === 'background') {
@@ -89,10 +90,7 @@ export function BatchProvider({ children }: { children: React.ReactNode }) {
           ]
         },
         config: {
-          candidateCount: 1,
-          thinkingConfig: {
-            thinkingLevel: ThinkingLevel.LOW
-          }
+          candidateCount: 1
         }
       });
 
@@ -138,7 +136,7 @@ export function BatchProvider({ children }: { children: React.ReactNode }) {
     for (const file of pendingFiles) {
       await processSingleFile(file, activeTool);
       // Increment usage for each file in batch (though Pro is unlimited)
-      await usageService.incrementUsage(userRole, 1);
+      await usageService.incrementUsage(userRole, activeTool, 1);
     }
 
     setIsProcessing(false);

@@ -3,17 +3,18 @@ import { increment } from 'firebase/firestore';
 
 export interface UserUsage {
   dailyCount: number;
+  featureCounts?: { [key: string]: number };
   lastReset: any; // Timestamp
 }
 
-const FREE_DAILY_LIMIT = 5;
+const FREE_FEATURE_LIMIT = 10;
 
 export const usageService = {
   /**
    * Checks if the user can perform an AI operation.
    * Returns true if allowed, false otherwise.
    */
-  async checkUsage(userRole: string): Promise<{ allowed: boolean; remaining: number }> {
+  async checkUsage(userRole: string, featureId: string = 'global'): Promise<{ allowed: boolean; remaining: number }> {
     if (userRole === 'pro' || userRole === 'admin') {
       return { allowed: true, remaining: 999 };
     }
@@ -28,11 +29,13 @@ export const usageService = {
 
     if (!usageSnap.exists()) {
       // First time usage
+      const initialFeatureCounts = { [featureId]: 0 };
       await setDoc(usageRef, {
         dailyCount: 0,
+        featureCounts: initialFeatureCounts,
         lastReset: serverTimestamp(),
       });
-      return { allowed: true, remaining: FREE_DAILY_LIMIT };
+      return { allowed: true, remaining: FREE_FEATURE_LIMIT };
     }
 
     const data = usageSnap.data() as UserUsage;
@@ -43,28 +46,35 @@ export const usageService = {
       // New day, reset counter
       await updateDoc(usageRef, {
         dailyCount: 0,
+        featureCounts: {},
         lastReset: serverTimestamp(),
       });
-      return { allowed: true, remaining: FREE_DAILY_LIMIT };
+      return { allowed: true, remaining: FREE_FEATURE_LIMIT };
     }
 
-    const remaining = FREE_DAILY_LIMIT - data.dailyCount;
+    const featureCounts = data.featureCounts || {};
+    const currentCount = featureCounts[featureId] || 0;
+    const remaining = FREE_FEATURE_LIMIT - currentCount;
+
     return { 
-      allowed: data.dailyCount < FREE_DAILY_LIMIT, 
+      allowed: currentCount < FREE_FEATURE_LIMIT, 
       remaining: Math.max(0, remaining) 
     };
   },
 
   /**
-   * Increments the user's daily usage count.
+   * Increments the user's daily usage count for a specific feature.
    */
-  async incrementUsage(userRole: string, count: number = 1) {
+  async incrementUsage(userRole: string, featureId: string = 'global', count: number = 1) {
     if (userRole === 'pro' || userRole === 'admin') return;
     if (!auth.currentUser) return;
 
     const usageRef = doc(db, 'usage', auth.currentUser.uid);
+    
+    // We use a dynamic key for the update
     await updateDoc(usageRef, {
-      dailyCount: increment(count),
+      [`featureCounts.${featureId}`]: increment(count),
+      dailyCount: increment(count) // Keep global count for stats
     });
   }
 };

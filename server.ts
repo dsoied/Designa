@@ -2,7 +2,7 @@ import express from "express";
 import { createServer as createViteServer } from "vite";
 import path from "path";
 import { fileURLToPath } from "url";
-import { GoogleGenAI, ThinkingLevel } from "@google/genai";
+import { GoogleGenAI } from "@google/genai";
 import dotenv from "dotenv";
 
 dotenv.config();
@@ -27,13 +27,17 @@ async function startServer() {
       const { prompt, negativePrompt, aspectRatio, style } = req.body;
       
       if (!process.env.GEMINI_API_KEY) {
-        return res.status(500).json({ error: "GEMINI_API_KEY não configurada no servidor." });
+        console.error("Server: GEMINI_API_KEY não encontrada no ambiente.");
+        return res.status(500).json({ error: "GEMINI_API_KEY não configurada no servidor. Se você estiver no Vercel, adicione esta variável de ambiente nas configurações do projeto." });
       }
 
+      console.log(`Server: Iniciando geração de imagem com chave que começa com: ${process.env.GEMINI_API_KEY.substring(0, 6)}...`);
       const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
       
       let styleDescription = style;
-      if (style === 'pixar') {
+      if (style === 'none') {
+        styleDescription = '';
+      } else if (style === 'pixar') {
         styleDescription = 'Pixar 3D style';
       } else if (style === 'photorealistic') {
         styleDescription = 'photorealistic 8k';
@@ -49,7 +53,9 @@ async function startServer() {
         styleDescription = 'pencil sketch';
       }
 
-      const fullPrompt = `${styleDescription} of: ${prompt}. ${negativePrompt ? `Avoid: ${negativePrompt}.` : ''} Aspect: ${aspectRatio}.`;
+      const fullPrompt = style === 'none' 
+        ? `${prompt}. ${negativePrompt ? `Avoid: ${negativePrompt}.` : ''} Aspect: ${aspectRatio}.`
+        : `${styleDescription} of: ${prompt}. ${negativePrompt ? `Avoid: ${negativePrompt}.` : ''} Aspect: ${aspectRatio}.`;
       
       // @ts-ignore - Using the specific image generation pattern from the app
       const response = await ai.models.generateContent({
@@ -59,15 +65,12 @@ async function startServer() {
         },
         config: {
           candidateCount: 1,
-          thinkingConfig: {
-            thinkingLevel: ThinkingLevel.LOW
-          },
           imageConfig: {
             aspectRatio: aspectRatio as any,
           }
         }
       });
-
+      
       res.json(response);
     } catch (error) {
       console.error("Server: Erro na geração de imagem:", error);
