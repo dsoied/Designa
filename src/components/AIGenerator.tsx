@@ -136,21 +136,20 @@ export default function AIGenerator({ userRole, onOpenPricing, onNavigate }: AIG
 
       let data;
       if (response && response.ok) {
-        data = await response.json();
-      } else {
-        // If we have a response but it's not ok, try to get the error message
-        if (response) {
-          try {
-            const errorData = await response.json();
-            if (errorData.error) {
-              throw new Error(errorData.error);
-            }
-          } catch (e) {
-            // Ignore parse error
+        try {
+          const contentType = response.headers.get("content-type");
+          if (contentType && contentType.includes("application/json")) {
+            data = await response.json();
+          } else {
+            console.warn("AIGenerator: Resposta do servidor não é JSON, tentando via cliente...");
           }
+        } catch (e) {
+          console.warn("AIGenerator: Erro ao processar JSON do servidor, tentando via cliente...");
         }
-        
-        // Fallback to client-side SDK if server is not available
+      }
+
+      if (!data) {
+        // Fallback to client-side SDK if server is not available or returned non-JSON
         const apiKey = import.meta.env.VITE_GEMINI_API_KEY || '';
         const ai = new GoogleGenAI({ apiKey });
         const styleDescription = style === 'none' ? '' : (styles.find(s => s.id === style)?.name || style);
@@ -234,7 +233,8 @@ export default function AIGenerator({ userRole, onOpenPricing, onNavigate }: AIG
 
     } catch (error: any) {
       console.error("Error generating image:", error);
-      setError(error.message || "Erro ao gerar imagem. Verifique sua conexão ou tente novamente mais tarde.");
+      const errorMessage = error.message || "Erro ao gerar imagem.";
+      setError(`${errorMessage} Verifique se a variável VITE_GEMINI_API_KEY está correta na Vercel.`);
     } finally {
       setIsGenerating(false);
     }

@@ -188,8 +188,8 @@ export const uploadImageToStorage = async (base64Data: string, fileName: string,
   if (!auth.currentUser) throw new Error("Usuário não autenticado");
   
   if (!firebaseConfig.storageBucket) {
-    console.error("Firebase: Storage Bucket não configurado! Verifique o arquivo firebase-applet-config.json");
-    throw new Error("Erro de configuração: Storage Bucket não encontrado.");
+    console.warn("Firebase: Storage Bucket não configurado! Usando fallback de memória (Base64).");
+    return base64Data;
   }
 
   try {
@@ -207,11 +207,9 @@ export const uploadImageToStorage = async (base64Data: string, fileName: string,
     console.log("Firebase: Upload concluído com sucesso. URL gerada.");
     return url;
   } catch (error: any) {
-    console.error('Firebase: Erro detalhado no upload:', error);
-    if (error.code === 'storage/retry-limit-exceeded') {
-      throw new Error("Erro de conexão com o Firebase Storage. Verifique se o serviço está ativo e se o domínio está autorizado.");
-    }
-    throw error;
+    console.error('Firebase: Erro detalhado no upload, usando fallback de memória:', error);
+    // Fallback: Return the original base64 data so the app continues to work
+    return base64Data;
   }
 };
 
