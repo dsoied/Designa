@@ -21,6 +21,7 @@ import { getDocFromServer } from 'firebase/firestore';
 import { useLanguage } from './context/LanguageContext';
 
 import { trackPageView } from './services/analyticsService';
+import { SpeedInsights } from '@vercel/speed-insights/react';
 
 export default function App() {
   const { t } = useLanguage();
@@ -475,6 +476,7 @@ export default function App() {
         }}
       />
       <CookieConsent />
+      <SpeedInsights />
     </div>
   );
 }
