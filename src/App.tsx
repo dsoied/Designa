@@ -19,6 +19,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import { auth, onAuthStateChanged, logout, FirebaseUser, db, query, collection, where, orderBy, onSnapshot, doc, handleFirestoreError, OperationType } from './firebase';
 import { getDocFromServer } from 'firebase/firestore';
 import { useLanguage } from './context/LanguageContext';
+import { Analytics } from '@vercel/analytics/react';
 
 import { trackPageView } from './services/analyticsService';
 
@@ -475,6 +476,7 @@ export default function App() {
         }}
       />
       <CookieConsent />
+      <Analytics />
     </div>
   );
 }
