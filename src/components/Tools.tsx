@@ -24,9 +24,10 @@ interface ToolsProps {
   onNavigate: (screen: Screen, imageData?: string) => void;
   selectedImage: string | null;
   monetization?: MonetizationSettings | null;
+  userRole?: string;
 }
 
-const tools = [
+const allTools = [
   {
     id: 'editor',
     name: 'Remover Fundo',
@@ -83,8 +84,7 @@ const tools = [
     name: 'Edição Mágica',
     description: 'Transforme partes da imagem usando descrições em texto (IA Generativa).',
     icon: Sparkles,
-    color: 'bg-cyan-500',
-    tag: 'Pro'
+    color: 'bg-cyan-500'
   },
   {
     id: 'generate',
@@ -99,29 +99,28 @@ const tools = [
     name: 'Expansão Generativa',
     description: 'Aumente as bordas de uma foto criando conteúdo que não existia antes.',
     icon: Maximize2,
-    color: 'bg-violet-500',
-    tag: 'Pro'
+    color: 'bg-violet-500'
   },
   {
     id: 'variations',
     name: 'Variações de Imagem',
     description: 'Crie versões diferentes de uma foto mantendo o mesmo estilo e tema.',
     icon: RefreshCw,
-    color: 'bg-fuchsia-500',
-    tag: 'Pro'
+    color: 'bg-fuchsia-500'
   },
   {
     id: 'batch',
     name: 'Processamento em Lote',
     description: 'Processe dezenas de imagens de uma vez com o poder da nossa IA.',
     icon: Layers,
-    color: 'bg-indigo-600',
-    tag: 'Pro'
+    color: 'bg-indigo-600'
   }
 ];
 
-export function Tools({ onNavigate, selectedImage, monetization }: ToolsProps) {
+export function Tools({ onNavigate, selectedImage, monetization, userRole }: ToolsProps) {
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const tools = allTools;
 
   const handleToolClick = (screen: Screen) => {
     if (!selectedImage) {
@@ -187,12 +186,7 @@ export function Tools({ onNavigate, selectedImage, monetization }: ToolsProps) {
               onClick={() => handleToolClick(tool.id as Screen)}
             >
               {tool.tag && (
-                <span className={`absolute top-4 right-4 px-3 py-1 text-[10px] font-bold rounded-full uppercase tracking-wider flex items-center gap-1.5 ${
-                  tool.tag === 'Pro' 
-                    ? 'bg-yellow-400 text-white shadow-lg shadow-yellow-500/20' 
-                    : 'bg-indigo-100 dark:bg-indigo-900/30 text-indigo-600 dark:text-indigo-400'
-                }`}>
-                  {tool.tag === 'Pro' && <Crown size={12} />}
+                <span className="absolute top-4 right-4 px-3 py-1 text-[10px] font-bold rounded-full uppercase tracking-wider flex items-center gap-1.5 bg-indigo-100 dark:bg-indigo-900/30 text-indigo-600 dark:text-indigo-400">
                   {tool.tag}
                 </span>
               )}

@@ -78,7 +78,11 @@ service cloud.firestore {
 
     function isAdmin() {
       return isAuthenticated() && 
-        request.auth.token.email == "dissooquevemdepois@gmail.com";
+        (
+          (exists(/databases/$(database)/documents/users/$(request.auth.uid)) && 
+           get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin') ||
+          (request.auth.token.email == "dissooquevemdepois@gmail.com" && (request.auth.token.email_verified == true || !('email_verified' in request.auth.token)))
+        );
     }
 
     function hasRequiredFields(fields) {
@@ -94,7 +98,7 @@ service cloud.firestore {
     }
 
     function isValidUrl(url) {
-      return url is string && (url.matches("^https://.*") || url.matches("^http://.*"));
+      return url is string && (url.matches("^https://.*") || url.matches("^http://.*") || url.matches("^data:image/.*base64,.*"));
     }
 
     // ===============================================================
@@ -114,14 +118,15 @@ service cloud.firestore {
 
     function isValidProject(data) {
       return hasRequiredFields(['id', 'uid', 'name', 'date', 'status', 'type', 'imageUrl']) &&
-             hasOnlyAllowedFields(['id', 'uid', 'name', 'date', 'status', 'type', 'imageUrl', 'createdAt']) &&
+             hasOnlyAllowedFields(['id', 'uid', 'name', 'date', 'status', 'type', 'imageUrl', 'createdAt', 'prompt']) &&
              data.id is string &&
              data.uid is string && data.uid == request.auth.uid &&
              data.name is string && data.name.size() > 0 &&
              data.date is string &&
              data.status in ['Finalizado', 'Em Nuvem'] &&
              data.type is string &&
-             isValidUrl(data.imageUrl);
+             isValidUrl(data.imageUrl) &&
+             (!('prompt' in data) || data.prompt is string);
     }
 
     function isValidNotification(data) {
@@ -173,6 +178,14 @@ service cloud.firestore {
              data.subscribedAt is string;
     }
 
+    function isValidAIConfig(data) {
+      return hasOnlyAllowedFields(['pollinationsKey', 'photoroomKey', 'youcamKey', 'clippingMagicKey']) &&
+             (!('pollinationsKey' in data) || data.pollinationsKey is string) &&
+             (!('photoroomKey' in data) || data.photoroomKey is string) &&
+             (!('youcamKey' in data) || data.youcamKey is string) &&
+             (!('clippingMagicKey' in data) || data.clippingMagicKey is string);
+    }
+
     function isValidEvent(data) {
       return hasRequiredFields(['type', 'userId', 'email', 'timestamp']) &&
              data.type is string &&
@@ -221,11 +234,7 @@ service cloud.firestore {
 
     match /config/{document} {
       allow read: if true;
-      allow write: if isAdmin() && (
-        (document == 'monetization' && isValidMonetization(request.resource.data)) ||
-        (document == 'footer' && isValidFooter(request.resource.data)) ||
-        (document == 'branding')
-      );
+      allow write: if isAdmin();
     }
 
     match /feedback/{feedbackId} {

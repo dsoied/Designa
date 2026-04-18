@@ -21,6 +21,15 @@ export function SignUp({ onNavigate, appConfig }: SignUpProps) {
   const [showPassword, setShowPassword] = useState(false);
   const [rememberMe, setRememberMe] = useState(true);
 
+  // Load remembered email on mount
+  React.useEffect(() => {
+    const savedEmail = localStorage.getItem('designa_remembered_email');
+    if (savedEmail) {
+      setFormData(prev => ({ ...prev, email: savedEmail }));
+      setRememberMe(true);
+    }
+  }, []);
+
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     setFormData({ ...formData, [e.target.name]: e.target.value });
   };
@@ -69,6 +78,13 @@ export function SignUp({ onNavigate, appConfig }: SignUpProps) {
         await loginWithEmail(formData.email, formData.password, rememberMe);
       }
       
+      // Save email if remember me is checked
+      if (rememberMe) {
+        localStorage.setItem('designa_remembered_email', formData.email);
+      } else {
+        localStorage.removeItem('designa_remembered_email');
+      }
+      
       setIsSuccess(true);
       setTimeout(() => {
         onNavigate('home');
@@ -102,9 +118,15 @@ export function SignUp({ onNavigate, appConfig }: SignUpProps) {
       setTimeout(() => {
         onNavigate('home');
       }, 2000);
-    } catch (error) {
+    } catch (error: any) {
       console.error("Erro no login com Google:", error);
-      alert("Falha ao entrar com Google. Tente novamente.");
+      let message = "Falha ao entrar com Google. Tente novamente.";
+      if (error.code === 'auth/unauthorized-domain') {
+        message = "Este domínio não está autorizado no Firebase. Adicione seu domínio da Vercel nas configurações do Firebase Console.";
+      } else if (error.message) {
+        message = error.message;
+      }
+      alert(message);
     } finally {
       setIsSubmitting(false);
     }
@@ -173,13 +195,15 @@ export function SignUp({ onNavigate, appConfig }: SignUpProps) {
 
           <form onSubmit={handleSubmit} className="space-y-6">
             <div className="space-y-2">
-              <label className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest ml-1">E-mail de Cadastro</label>
+              <label htmlFor="email" className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest ml-1">E-mail de Cadastro</label>
               <div className="relative">
                 <Mail className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
                 <input 
                   required
+                  id="email"
                   type="email" 
                   name="email"
+                  autoComplete="email"
                   value={formData.email}
                   onChange={handleChange}
                   placeholder="seu@email.com"
@@ -252,7 +276,7 @@ export function SignUp({ onNavigate, appConfig }: SignUpProps) {
             Crie sua conta e <span className="text-indigo-600">desbloqueie</span> seu potencial.
           </h2>
           <p className="text-lg text-slate-600 dark:text-slate-400 leading-relaxed max-w-lg">
-            Tenha acesso a recursos exclusivos de IA, salve seu histórico de edições e colabore em tempo real.
+            Tenha acesso a todos os recursos de IA totalmente grátis, salve seu histórico de edições e colabore em tempo real.
           </p>
         </div>
 
@@ -282,13 +306,15 @@ export function SignUp({ onNavigate, appConfig }: SignUpProps) {
         <form onSubmit={handleSubmit} className="space-y-5">
           {mode === 'signup' && (
             <div className="space-y-2">
-              <label className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest ml-1">Nome Completo</label>
+              <label htmlFor="full-name" className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest ml-1">Nome Completo</label>
               <div className="relative">
                 <User className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
                 <input 
                   required
+                  id="full-name"
                   type="text" 
                   name="name"
+                  autoComplete="name"
                   value={formData.name}
                   onChange={handleChange}
                   placeholder="Ex: João Silva"
@@ -299,13 +325,15 @@ export function SignUp({ onNavigate, appConfig }: SignUpProps) {
           )}
 
           <div className="space-y-2">
-            <label className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest ml-1">E-mail</label>
+            <label htmlFor="email" className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest ml-1">E-mail</label>
             <div className="relative">
               <Mail className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
               <input 
                 required
+                id="email"
                 type="email" 
                 name="email"
+                autoComplete="email"
                 value={formData.email}
                 onChange={handleChange}
                 placeholder="seu@email.com"
@@ -316,7 +344,7 @@ export function SignUp({ onNavigate, appConfig }: SignUpProps) {
 
           <div className="space-y-2">
             <div className="flex justify-between items-center ml-1">
-              <label className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest">Senha</label>
+              <label htmlFor="password" title="email" className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest">Senha</label>
               {mode === 'signup' && (
                 <button 
                   type="button"
@@ -332,8 +360,10 @@ export function SignUp({ onNavigate, appConfig }: SignUpProps) {
               <LockIcon className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
               <input 
                 required
+                id="password"
                 type={showPassword ? "text" : "password"} 
                 name="password"
+                autoComplete={mode === 'signup' ? "new-password" : "current-password"}
                 value={formData.password}
                 onChange={handleChange}
                 placeholder="••••••••"
@@ -351,13 +381,15 @@ export function SignUp({ onNavigate, appConfig }: SignUpProps) {
 
           {mode === 'signup' && (
             <div className="space-y-2">
-              <label className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest ml-1">Confirmar Senha</label>
+              <label htmlFor="confirm-password" title="email" className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest ml-1">Confirmar Senha</label>
               <div className="relative">
                 <LockIcon className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
                 <input 
                   required
+                  id="confirm-password"
                   type={showPassword ? "text" : "password"} 
                   name="confirmPassword"
+                  autoComplete="new-password"
                   value={formData.confirmPassword}
                   onChange={handleChange}
                   placeholder="••••••••"

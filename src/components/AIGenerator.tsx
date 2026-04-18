@@ -1,6 +1,5 @@
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { GoogleGenAI } from "@google/genai";
 import { 
   Sparkles, 
   Image as ImageIcon, 
@@ -8,40 +7,62 @@ import {
   RefreshCw, 
   History, 
   Zap, 
-  Crown,
   ArrowRight,
   Wand2,
   Palette,
   Maximize2,
   Layers,
-  Search,
   CheckCircle2,
-  Clapperboard,
   X,
-  Trash2
+  Trash2,
+  Loader2,
+  Film
 } from 'lucide-react';
-import { db, auth, addDoc, collection, serverTimestamp, uploadImageToStorage, getDocs, query, where, orderBy, limit, deleteDoc, doc, handleFirestoreError, OperationType } from '../firebase';
+import { db, auth, addDoc, collection, serverTimestamp, uploadImageToStorage, getDocs, query, where, orderBy, limit, deleteDoc, doc, handleFirestoreError, OperationType, getDoc } from '../firebase';
 import { usageService } from '../services/usageService';
+import { generateImage, refinePrompt, refinePromptOptions } from '../services/geminiService';
 
 interface AIGeneratorProps {
   userRole?: string;
-  onOpenPricing?: () => void;
   onNavigate?: (screen: any, imageData?: string) => void;
 }
 
-export default function AIGenerator({ userRole, onOpenPricing, onNavigate }: AIGeneratorProps) {
+export default function AIGenerator({ userRole, onNavigate }: AIGeneratorProps) {
   const [prompt, setPrompt] = useState('');
   const [negativePrompt, setNegativePrompt] = useState('');
   const [aspectRatio, setAspectRatio] = useState<'1:1' | '16:9' | '9:16' | '4:3'>('1:1');
   const [style, setStyle] = useState('none');
+  const [selectedModel, setSelectedModel] = useState('flux');
   const [isGenerating, setIsGenerating] = useState(false);
   const [showSuccess, setShowSuccess] = useState(false);
   const [generatedImage, setGeneratedImage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [isRefining, setIsRefining] = useState(false);
+  const [refinementChoices, setRefinementChoices] = useState<string[]>([]);
+  const [showRefinementModal, setShowRefinementModal] = useState(false);
   const [suggestions, setSuggestions] = useState<string[]>([]);
   const [selectedHistoryImage, setSelectedHistoryImage] = useState<{id: string, url: string, prompt: string} | null>(null);
   const [generationHistory, setGenerationHistory] = useState<{id: string, url: string, prompt: string}[]>([]);
+  const [pollinationsKey, setPollinationsKey] = useState('');
+  const [neroKey, setNeroKey] = useState('');
+  const [youcamKey, setYoucamKey] = useState('');
+
+  useEffect(() => {
+    const fetchAIConfig = async () => {
+      try {
+        const aiDoc = await getDoc(doc(db, 'config', 'ai'));
+        if (aiDoc.exists()) {
+          const data = aiDoc.data();
+          setPollinationsKey(data.pollinationsKey || '');
+          setNeroKey(data.neroKey || '');
+          setYoucamKey(data.youcamKey || '');
+        }
+      } catch (error) {
+        console.error("AIGenerator: Erro ao buscar config de IA:", error);
+      }
+    };
+    fetchAIConfig();
+  }, []);
 
   useEffect(() => {
     const fetchHistory = async () => {
@@ -90,8 +111,15 @@ export default function AIGenerator({ userRole, onOpenPricing, onNavigate }: AIG
     { id: 'anime', name: 'Anime', icon: <Zap size={14} /> },
     { id: 'oil_painting', name: 'Pintura a Óleo', icon: <Layers size={14} /> },
     { id: '3d_render', name: 'Render 3D', icon: <Maximize2 size={14} /> },
-    { id: 'pixar', name: 'Estilo Pixar', icon: <Clapperboard size={14} /> },
+    { id: 'pixar', name: 'Estilo Pixar', icon: <Film size={14} /> },
     { id: 'sketch', name: 'Esboço', icon: <Wand2 size={14} /> },
+  ];
+
+  const aiModels = [
+    { id: 'gemini-2.5-flash', name: 'Gemini 2.5 Flash', description: 'Alta velocidade e qualidade artística (Google)', provider: 'google', icon: <Sparkles size={14} className="text-blue-500" /> },
+    { id: 'gemini-3-flash', name: 'Gemini 3 Pro', description: 'Realismo extremo e detalhes precisos', provider: 'google', icon: <Sparkles size={14} className="text-indigo-500" /> },
+    { id: 'flux', name: 'Flux Pro (Pollinations)', description: 'Qualidade fotográfica superior', provider: 'pollinations', icon: <Sparkles size={14} className="text-purple-500" /> },
+    { id: 'turbo', name: 'Turbo (Pollinations)', description: 'Geração ultra rápida', provider: 'pollinations', icon: <Zap size={14} className="text-amber-500" /> },
   ];
 
   const handleGenerate = async () => {
@@ -103,138 +131,71 @@ export default function AIGenerator({ userRole, onOpenPricing, onNavigate }: AIG
 
     if (!prompt.trim()) return;
 
-    // Usage check for free users
-    const usage = await usageService.checkUsage(userRole || 'free', 'generate');
-    if (!usage.allowed) {
-      onOpenPricing?.();
-      return;
-    }
-
     setIsGenerating(true);
     setShowSuccess(false);
     setError(null);
     try {
-      // On Vercel, the /api/generate-image might not exist. 
-      // We'll try to use the client-side SDK if the server call fails.
-      let response;
-      try {
-        response = await fetch('/api/generate-image', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            prompt,
-            negativePrompt,
-            aspectRatio,
-            style
-          }),
-        });
-      } catch (fetchErr) {
-        console.warn("AIGenerator: Erro ao conectar com o servidor, tentando via cliente...", fetchErr);
-      }
+      const selectedModelInfo = aiModels.find(m => m.id === selectedModel);
+      const provider = selectedModelInfo?.provider || 'google';
+      let finalImageUrl = '';
 
-      let data;
-      if (response && response.ok) {
-        try {
-          const contentType = response.headers.get("content-type");
-          if (contentType && contentType.includes("application/json")) {
-            data = await response.json();
-          } else {
-            console.warn("AIGenerator: Resposta do servidor não é JSON, tentando via cliente...");
-          }
-        } catch (e) {
-          console.warn("AIGenerator: Erro ao processar JSON do servidor, tentando via cliente...");
-        }
-      }
-
-      if (!data) {
-        // Fallback to client-side SDK if server is not available or returned non-JSON
-        const apiKey = import.meta.env.VITE_GEMINI_API_KEY || '';
-        const ai = new GoogleGenAI({ apiKey });
-        const styleDescription = style === 'none' ? '' : (styles.find(s => s.id === style)?.name || style);
-        const fullPrompt = style === 'none' 
-          ? `${prompt}. ${negativePrompt ? `Avoid: ${negativePrompt}.` : ''} Aspect: ${aspectRatio}.`
-          : `${styleDescription} of: ${prompt}. ${negativePrompt ? `Avoid: ${negativePrompt}.` : ''} Aspect: ${aspectRatio}.`;
+      if (provider === 'google') {
+        console.log(`AIGenerator: Usando Gemini para gerar imagem...`);
+        finalImageUrl = await generateImage(prompt, aspectRatio === '1:1' ? '1:1' : aspectRatio === '16:9' ? '16:9' : '1:1');
+      } else if (provider === 'pollinations') {
+        console.log(`AIGenerator: Usando Pollinations (${selectedModel})...`);
+        const width = aspectRatio === '16:9' ? 1280 : aspectRatio === '9:16' ? 720 : 1024;
+        const height = aspectRatio === '16:9' ? 720 : aspectRatio === '9:16' ? 1280 : 1024;
+        const seed = Math.floor(Math.random() * 1000000);
+        finalImageUrl = `https://image.pollinations.ai/prompt/${encodeURIComponent(prompt)}?width=${width}&height=${height}&seed=${seed}&nologo=true&model=${selectedModel}`;
         
-        // @ts-ignore - Using the specific image generation pattern from the app
-        data = await ai.models.generateContent({
-          model: 'gemini-2.5-flash-image',
-          contents: {
-            parts: [{ text: fullPrompt }],
-          },
-          config: {
-            candidateCount: 1,
-            imageConfig: {
-              aspectRatio: aspectRatio as any,
-            }
-          }
+        // Verificação rápida de carregamento
+        const img = new Image();
+        img.crossOrigin = "anonymous";
+        await new Promise((resolve, reject) => {
+          img.onload = resolve;
+          img.onerror = reject;
+          img.src = finalImageUrl;
         });
       }
-      
-      // Stop loading state immediately as we have data from IA
-      setIsGenerating(false);
-      
-      let foundImage = false;
-      const candidates = data.candidates;
-      
-      if (candidates && candidates.length > 0 && candidates[0].content?.parts) {
-        for (const part of candidates[0].content.parts) {
-          if (part.inlineData?.data) {
-            const resultBase64 = part.inlineData.data;
-            const resultMimeType = part.inlineData.mimeType || 'image/png';
-            const resultUrl = `data:${resultMimeType};base64,${resultBase64}`;
-            
-            setGeneratedImage(resultUrl);
-            setShowSuccess(true);
-            foundImage = true;
-            
-            // Hide success message after 3 seconds
-            setTimeout(() => setShowSuccess(false), 3000);
 
-            // Increment usage and save in background to not block UI
-            usageService.incrementUsage(userRole || 'free', 'generate');
+      if (finalImageUrl) {
+        setGeneratedImage(finalImageUrl);
+        setShowSuccess(true);
+        setTimeout(() => setShowSuccess(false), 3000);
+        
+        usageService.incrementUsage(userRole || 'free', 'generate');
 
-            if (auth.currentUser) {
-              const fileName = `AI_Gen_${Date.now()}.png`;
-              // We don't await these to allow the UI to be responsive immediately
-              uploadImageToStorage(resultUrl, fileName, `users/${auth.currentUser.uid}/generated`).then(async (storageUrl) => {
-                const path = 'projects';
-                try {
-                  const docRef = await addDoc(collection(db, path), {
-                    id: Date.now().toString(),
-                    uid: auth.currentUser!.uid,
-                    name: `Geração IA: ${prompt.substring(0, 20)}...`,
-                    date: new Date().toISOString().split('T')[0],
-                    createdAt: serverTimestamp(),
-                    status: 'Finalizado',
-                    type: 'Geração de Imagem',
-                    imageUrl: storageUrl,
-                    prompt: prompt
-                  });
-
-                  setGenerationHistory(prev => [{id: docRef.id, url: resultUrl, prompt: prompt}, ...prev].slice(0, 20));
-                } catch (error) {
-                  handleFirestoreError(error, OperationType.WRITE, path);
-                }
-              }).catch(err => console.error("Error uploading generated image:", err));
-            } else {
-              // Fallback for non-logged in users
-              setGenerationHistory(prev => [{id: Date.now().toString(), url: resultUrl, prompt: prompt}, ...prev].slice(0, 20));
+        if (auth.currentUser) {
+          const fileName = `${provider === 'google' ? 'Gemini' : 'Pollinations'}_Gen_${Date.now()}.png`;
+          uploadImageToStorage(finalImageUrl, fileName, `users/${auth.currentUser.uid}/generated`).then(async (storageUrl) => {
+            const path = 'projects';
+            try {
+              const docRef = await addDoc(collection(db, path), {
+                id: Date.now().toString(),
+                uid: auth.currentUser!.uid,
+                name: `Geração ${provider === 'google' ? 'Gemini' : 'Pollinations'}: ${prompt.substring(0, 20)}...`,
+                date: new Date().toISOString().split('T')[0],
+                createdAt: serverTimestamp(),
+                status: 'Finalizado',
+                type: 'Geração de Imagem',
+                imageUrl: storageUrl,
+                prompt: prompt
+              });
+              setGenerationHistory(prev => [{id: docRef.id, url: finalImageUrl, prompt: prompt}, ...prev].slice(0, 20));
+            } catch (error) {
+              handleFirestoreError(error, OperationType.WRITE, path);
             }
-            break;
-          }
+          }).catch(err => console.error("Error uploading generated image:", err));
+        } else {
+          setGenerationHistory(prev => [{id: Date.now().toString(), url: finalImageUrl, prompt: prompt}, ...prev].slice(0, 20));
         }
+      } else {
+        throw new Error("Não foi possível gerar a imagem.");
       }
-
-      if (!foundImage) {
-        setError("A IA não conseguiu gerar a imagem. Tente um prompt diferente.");
-      }
-
     } catch (error: any) {
       console.error("Error generating image:", error);
-      const errorMessage = error.message || "Erro ao gerar imagem.";
-      setError(`${errorMessage} Verifique se a variável VITE_GEMINI_API_KEY está correta na Vercel.`);
+      setError(error.message || "Erro ao gerar imagem.");
     } finally {
       setIsGenerating(false);
     }
@@ -242,34 +203,14 @@ export default function AIGenerator({ userRole, onOpenPricing, onNavigate }: AIG
 
   const handleRefinePrompt = async () => {
     if (!prompt.trim()) return;
-    
     setIsRefining(true);
-    setError(null);
     try {
-      const ai = new GoogleGenAI({ apiKey: import.meta.env.VITE_GEMINI_API_KEY || '' });
-      
-      const systemPrompt = `Você é um especialista em engenharia de prompts para geração de imagens. 
-      O usuário fornecerá uma ideia básica e você deve sugerir 3 variações aprimoradas, mais detalhadas e artísticas.
-      Mantenha as sugestões em Português, a menos que o prompt original esteja em Inglês.
-      Retorne APENAS as 3 sugestões separadas por uma linha em branco. Não inclua introduções ou explicações.`;
-
-      const response = await ai.models.generateContent({
-        model: "gemini-2.0-flash",
-        contents: {
-          parts: [
-            { text: systemPrompt },
-            { text: prompt }
-          ]
-        }
-      });
-
-      const text = response.candidates?.[0]?.content?.parts?.[0]?.text || "";
-      
-      const refinedSuggestions = text.split('\n\n').map(s => s.trim()).filter(s => s.length > 0).slice(0, 3);
-      setSuggestions(refinedSuggestions);
-    } catch (err: any) {
+      console.log("AIGenerator: Refinando prompt com Gemini (3 opções)...");
+      const options = await refinePromptOptions(prompt);
+      setRefinementChoices(options);
+      setShowRefinementModal(true);
+    } catch (err) {
       console.error("Error refining prompt:", err);
-      setError("Não foi possível refinar o prompt no momento.");
     } finally {
       setIsRefining(false);
     }
@@ -310,21 +251,34 @@ export default function AIGenerator({ userRole, onOpenPricing, onNavigate }: AIG
                   value={prompt}
                   onChange={(e) => setPrompt(e.target.value)}
                   placeholder="Ex: Um astronauta andando a cavalo em Marte, estilo cyberpunk, luzes neon..."
-                  className="relative w-full h-40 p-5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl focus:ring-2 focus:ring-indigo-600/20 focus:border-indigo-600 outline-none transition-all resize-none text-sm sm:text-base text-slate-900 dark:text-white placeholder:text-slate-400 dark:placeholder:text-slate-600 shadow-sm"
+                  className="relative w-full h-32 p-5 pr-14 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl focus:ring-2 focus:ring-indigo-600/20 focus:border-indigo-600 outline-none transition-all resize-none text-sm sm:text-base text-slate-900 dark:text-white placeholder:text-slate-400 dark:placeholder:text-slate-600 shadow-sm"
                 />
-                <button
+                <button 
                   onClick={handleRefinePrompt}
                   disabled={isRefining || !prompt.trim()}
-                  className="absolute bottom-4 right-4 p-2 bg-indigo-600/10 hover:bg-indigo-600 text-indigo-600 hover:text-white rounded-xl transition-all flex items-center gap-2 text-[10px] font-black uppercase tracking-widest disabled:opacity-50"
-                  title="Refinar Prompt com IA"
+                  className="absolute right-3 bottom-3 p-3 bg-indigo-600 hover:bg-indigo-700 disabled:bg-slate-300 dark:disabled:bg-slate-800 text-white rounded-xl shadow-lg shadow-indigo-500/20 transition-all z-10 flex items-center gap-2 group"
+                  title="Refinar com Google Gemini"
                 >
                   {isRefining ? (
-                    <RefreshCw size={14} className="animate-spin" />
+                    <RefreshCw size={18} className="animate-spin" />
                   ) : (
-                    <Wand2 size={14} />
+                    <>
+                      <Sparkles size={18} className="text-indigo-200" />
+                      <span className="text-[10px] font-black uppercase tracking-widest hidden group-hover:block transition-all">Gemini Refine</span>
+                    </>
                   )}
-                  {isRefining ? 'Refinando...' : 'Refinar'}
                 </button>
+              </div>
+
+              <div className="space-y-2">
+                <label className="text-[10px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest ml-1">O que EVITAR (Prompt Negativo)</label>
+                <input
+                  type="text"
+                  value={negativePrompt}
+                  onChange={(e) => setNegativePrompt(e.target.value)}
+                  placeholder="Ex: mãos extras, deformado, baixa qualidade..."
+                  className="w-full p-3 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl text-xs text-slate-900 dark:text-white outline-none focus:ring-2 focus:ring-red-500/20 focus:border-red-500/50 transition-all shadow-sm"
+                />
               </div>
 
               <AnimatePresence>
@@ -364,6 +318,43 @@ export default function AIGenerator({ userRole, onOpenPricing, onNavigate }: AIG
                   </motion.div>
                 )}
               </AnimatePresence>
+            </div>
+
+            <div className="space-y-3">
+              <label className="text-xs font-black text-slate-400 dark:text-slate-500 uppercase tracking-[0.2em]">Motor de IA (Modelo)</label>
+              <div className="grid grid-cols-1 gap-2">
+                {aiModels.map((m) => (
+                  <button
+                    key={m.id}
+                    onClick={() => setSelectedModel(m.id)}
+                    className={`flex flex-col items-start p-4 rounded-2xl border transition-all text-left group ${
+                      selectedModel === m.id 
+                        ? 'bg-indigo-600 border-indigo-600 text-white shadow-lg shadow-indigo-500/30' 
+                        : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-400 hover:border-indigo-600/40 hover:bg-slate-50 dark:hover:bg-slate-800/50'
+                    }`}
+                  >
+                    <div className="flex items-center justify-between w-full mb-1">
+                      <div className="flex items-center gap-2">
+                        {m.icon}
+                        <span className="text-sm font-black">{m.name}</span>
+                      </div>
+      {/* Model Type Tag */}
+      {m.provider === 'pollinations' ? (
+        <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold uppercase tracking-widest ${selectedModel === m.id ? 'bg-white/20 text-white' : 'bg-indigo-100 dark:bg-indigo-900/30 text-indigo-600'}`}>
+          Grátis
+        </span>
+      ) : (
+        <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold uppercase tracking-widest border ${selectedModel === m.id ? 'bg-white/20 border-white/40 text-white' : 'bg-indigo-100 border-indigo-200 dark:bg-indigo-900/10 dark:border-indigo-700/50 text-indigo-600 dark:text-indigo-400'}`}>
+          Grátis
+        </span>
+      )}
+                    </div>
+                    <span className={`text-[10px] ${selectedModel === m.id ? 'text-indigo-100' : 'text-slate-400 dark:text-slate-500'}`}>
+                      {m.description}
+                    </span>
+                  </button>
+                ))}
+              </div>
             </div>
 
             <div className="space-y-3">
@@ -465,8 +456,9 @@ export default function AIGenerator({ userRole, onOpenPricing, onNavigate }: AIG
         <div className="flex-1 min-w-0">
           <div className="bg-slate-50 dark:bg-slate-900/50 rounded-[2.5rem] border-2 border-dashed border-slate-200 dark:border-slate-800 min-h-[400px] sm:min-h-[600px] flex items-center justify-center relative overflow-hidden group shadow-inner">
             <AnimatePresence mode="wait">
-              {showSuccess && (
+              {showSuccess ? (
                 <motion.div
+                  key="success-toast"
                   initial={{ opacity: 0, y: -20 }}
                   animate={{ opacity: 1, y: 0 }}
                   exit={{ opacity: 0, y: -20 }}
@@ -475,24 +467,23 @@ export default function AIGenerator({ userRole, onOpenPricing, onNavigate }: AIG
                   <CheckCircle2 size={16} />
                   Imagem Gerada com Sucesso!
                 </motion.div>
-              )}
-
-              {error && (
+              ) : error ? (
                 <motion.div
+                  key="error-toast"
                   initial={{ opacity: 0, y: -20 }}
                   animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: -20 }}
                   className="absolute top-8 left-1/2 -translate-x-1/2 z-20 bg-red-500 text-white px-6 py-3 rounded-full font-black text-xs uppercase tracking-widest shadow-xl flex items-center gap-2"
                 >
                   <X size={16} />
                   {error}
                 </motion.div>
-              )}
-
-              {generatedImage ? (
+              ) : generatedImage ? (
                 <motion.div
-                  key={generatedImage}
+                  key="preview-content"
                   initial={{ opacity: 0, scale: 0.95 }}
                   animate={{ opacity: 1, scale: 1 }}
+                  exit={{ opacity: 0, scale: 1.05 }}
                   className="w-full h-full flex flex-col items-center justify-center p-4 sm:p-12"
                 >
                   <div className="relative group/img max-w-full">
@@ -523,7 +514,13 @@ export default function AIGenerator({ userRole, onOpenPricing, onNavigate }: AIG
                   </div>
                 </motion.div>
               ) : (
-                <div className="text-center space-y-6 p-12">
+                <motion.div 
+                  key="placeholder"
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  exit={{ opacity: 0 }}
+                  className="text-center space-y-6 p-12"
+                >
                   <div className="w-24 h-24 bg-white dark:bg-slate-800 rounded-[2rem] shadow-xl border border-slate-100 dark:border-slate-800 flex items-center justify-center mx-auto text-indigo-600">
                     <ImageIcon className="w-12 h-12" />
                   </div>
@@ -531,7 +528,7 @@ export default function AIGenerator({ userRole, onOpenPricing, onNavigate }: AIG
                     <h3 className="text-2xl font-black text-slate-900 dark:text-white tracking-tight">Sua criação aparecerá aqui</h3>
                     <p className="text-slate-500 dark:text-slate-400 max-w-xs mx-auto font-medium">Descreva o que você imagina no campo ao lado e deixe a nossa IA fazer a mágica.</p>
                   </div>
-                </div>
+                </motion.div>
               )}
             </AnimatePresence>
 
@@ -606,8 +603,62 @@ export default function AIGenerator({ userRole, onOpenPricing, onNavigate }: AIG
         </div>
       </div>
 
-      {/* Full Size Modal */}
       <AnimatePresence>
+        {showRefinementModal && (
+          <div className="fixed inset-0 z-[110] flex items-center justify-center p-4">
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setShowRefinementModal(false)}
+              className="absolute inset-0 bg-slate-950/80 backdrop-blur-sm"
+            />
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95, y: 20 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 20 }}
+              className="relative w-full max-w-2xl bg-white dark:bg-slate-900 rounded-[2rem] shadow-2xl border border-slate-200 dark:border-slate-800 p-8 flex flex-col gap-6"
+            >
+              <div className="flex justify-between items-center">
+                <div className="flex items-center gap-3">
+                  <div className="p-2 bg-indigo-100 dark:bg-indigo-900/40 text-indigo-600 rounded-xl">
+                    <Wand2 size={20} />
+                  </div>
+                  <h3 className="text-xl font-black text-slate-900 dark:text-white">Escolha o melhor Refinamento</h3>
+                </div>
+                <button 
+                  onClick={() => setShowRefinementModal(false)}
+                  className="p-2 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-full text-slate-500 transition-colors"
+                >
+                  <X size={20} />
+                </button>
+              </div>
+
+              <div className="space-y-4">
+                {refinementChoices.map((choice, idx) => (
+                  <motion.button
+                    key={idx}
+                    whileHover={{ scale: 1.01, x: 5 }}
+                    whileTap={{ scale: 0.99 }}
+                    onClick={() => {
+                      setPrompt(choice);
+                      setShowRefinementModal(false);
+                    }}
+                    className="w-full p-6 text-left bg-slate-50 dark:bg-slate-800/50 hover:bg-indigo-50 dark:hover:bg-indigo-900/20 border border-slate-200 dark:border-slate-800 hover:border-indigo-200 dark:hover:border-indigo-800 rounded-2xl transition-all group"
+                  >
+                    <div className="flex items-center gap-3 mb-2">
+                      <span className="px-2 py-0.5 bg-indigo-600 text-[10px] font-black text-white rounded uppercase tracking-tighter">Opção {idx + 1}</span>
+                    </div>
+                    <p className="text-sm text-slate-700 dark:text-slate-300 leading-relaxed font-medium">{choice}</p>
+                  </motion.button>
+                ))}
+              </div>
+
+              <p className="text-[10px] text-slate-500 text-center uppercase tracking-widest font-bold">Gerado pelo Google Gemini</p>
+            </motion.div>
+          </div>
+        )}
+
         {selectedHistoryImage && (
           <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 sm:p-12">
             <motion.div

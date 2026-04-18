@@ -2,13 +2,25 @@ import express from "express";
 import { createServer as createViteServer } from "vite";
 import path from "path";
 import { fileURLToPath } from "url";
-import { GoogleGenAI } from "@google/genai";
 import dotenv from "dotenv";
 
 dotenv.config();
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
+
+// Helper to get buffer from base64 or URL
+async function getImageBuffer(input: string): Promise<Buffer> {
+  if (input.startsWith('http')) {
+    const response = await fetch(input);
+    if (!response.ok) throw new Error(`Falha ao baixar imagem da URL: ${response.statusText}`);
+    const arrayBuffer = await response.arrayBuffer();
+    return Buffer.from(arrayBuffer);
+  }
+  
+  const base64Data = input.replace(/^data:image\/\w+;base64,/, "");
+  return Buffer.from(base64Data, 'base64');
+}
 
 async function startServer() {
   const app = express();
@@ -21,60 +33,199 @@ async function startServer() {
     res.json({ status: "ok", timestamp: new Date().toISOString() });
   });
 
-  // API Proxy for Gemini Image Generation
-  app.post("/api/generate-image", async (req, res) => {
+
+  // Clipping Magic & iLoveIMG API Proxy
+  app.post("/api/remove-background", async (req, res) => {
     try {
-      const { prompt, negativePrompt, aspectRatio, style } = req.body;
+      const { image, test, engine = 'clippingmagic' } = req.body; // base64 image or URL
       
-      if (!process.env.GEMINI_API_KEY) {
-        console.error("Server: GEMINI_API_KEY não encontrada no ambiente.");
-        return res.status(500).json({ error: "GEMINI_API_KEY não configurada no servidor. Se você estiver no Vercel, adicione esta variável de ambiente nas configurações do projeto." });
+      if (!image) {
+        return res.status(400).json({ error: "Nenhuma imagem fornecida." });
       }
 
-      console.log(`Server: Iniciando geração de imagem com chave que começa com: ${process.env.GEMINI_API_KEY.substring(0, 6)}...`);
-      const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
-      
-      let styleDescription = style;
-      if (style === 'none') {
-        styleDescription = '';
-      } else if (style === 'pixar') {
-        styleDescription = 'Pixar 3D style';
-      } else if (style === 'photorealistic') {
-        styleDescription = 'photorealistic 8k';
-      } else if (style === 'digital_art') {
-        styleDescription = 'digital art';
-      } else if (style === 'anime') {
-        styleDescription = 'anime style';
-      } else if (style === 'oil_painting') {
-        styleDescription = 'oil painting';
-      } else if (style === '3d_render') {
-        styleDescription = '3D render';
-      } else if (style === 'sketch') {
-        styleDescription = 'pencil sketch';
-      }
+      const buffer = await getImageBuffer(image);
 
-      const fullPrompt = style === 'none' 
-        ? `${prompt}. ${negativePrompt ? `Avoid: ${negativePrompt}.` : ''} Aspect: ${aspectRatio}.`
-        : `${styleDescription} of: ${prompt}. ${negativePrompt ? `Avoid: ${negativePrompt}.` : ''} Aspect: ${aspectRatio}.`;
-      
-      // @ts-ignore - Using the specific image generation pattern from the app
-      const response = await ai.models.generateContent({
-        model: 'gemini-2.5-flash-image',
-        contents: {
-          parts: [{ text: fullPrompt }],
-        },
-        config: {
-          candidateCount: 1,
-          imageConfig: {
-            aspectRatio: aspectRatio as any,
-          }
+      if (engine === 'clippingmagic') {
+        const apiId = process.env.CLIPPING_MAGIC_API_ID;
+        const apiSecret = process.env.CLIPPING_MAGIC_API_SECRET;
+
+        if (!apiId || !apiSecret) {
+          console.error("Server: CLIPPING_MAGIC_API_ID ou SECRET não configurados.");
+          return res.status(500).json({ error: "Configuração do Clipping Magic incompleta no servidor." });
         }
-      });
+
+        console.log(`Server: Removendo fundo com Clipping Magic... (Teste: ${test !== false})`);
+
+        const formData = new FormData();
+        formData.append('image', new Blob([buffer], { type: 'image/png' }), 'image.png');
+        formData.append('test', test !== false ? 'true' : 'false');
+
+        const response = await fetch("https://clippingmagic.com/api/v1/images", {
+          method: "POST",
+          headers: {
+            "Authorization": "Basic " + Buffer.from(apiId + ":" + apiSecret).toString('base64'),
+          },
+          body: formData
+        });
+
+        if (!response.ok) {
+          const errorText = await response.text();
+          console.error(`Server: Erro do Clipping Magic API (${response.status}):`, errorText);
+          if (response.status === 402) {
+             return res.status(402).json({ error: "Créditos de produção insuficientes no Clipping Magic." });
+          }
+          throw new Error(`Clipping Magic Error: ${response.status} - ${errorText}`);
+        }
+
+        const resultBuffer = await response.arrayBuffer();
+        const resultBase64 = Buffer.from(resultBuffer).toString('base64');
+        return res.json({ image: `data:image/png;base64,${resultBase64}` });
+      } 
       
-      res.json(response);
+      if (engine === 'iloveimg') {
+        const publicKey = process.env.ILOVE_API_PUBLIC_KEY;
+        const secretKey = process.env.ILOVE_API_SECRET_KEY;
+
+        if (!publicKey || !secretKey) {
+          return res.status(500).json({ error: "Configuração do iLoveIMG incompleta no servidor." });
+        }
+
+        console.log("Server: Removendo fundo com iLoveIMG...");
+
+        // 1. Auth
+        const authRes = await fetch('https://api.iloveimg.com/v1/auth', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ public_key: publicKey, secret_key: secretKey })
+        });
+        if (!authRes.ok) throw new Error("Falha na autenticação iLoveIMG");
+        const { token } = await authRes.json() as any;
+
+        // 2. Start
+        const startRes = await fetch('https://api.iloveimg.com/v1/start/removebackground', {
+          headers: { 'Authorization': `Bearer ${token}` }
+        });
+        if (!startRes.ok) throw new Error("Falha ao iniciar tarefa iLoveIMG");
+        const { server, task } = await startRes.json() as any;
+
+        // 3. Upload
+        const uploadFormData = new FormData();
+        uploadFormData.append('task', task);
+        uploadFormData.append('file', new Blob([buffer], { type: 'image/png' }), 'image.png');
+
+        const uploadRes = await fetch(`https://${server}/v1/upload`, {
+          method: 'POST',
+          headers: { 'Authorization': `Bearer ${token}` },
+          body: uploadFormData
+        });
+        if (!uploadRes.ok) throw new Error("Falha no upload iLoveIMG");
+        const { server_filename } = await uploadRes.json() as any;
+
+        // 4. Process
+        const processRes = await fetch(`https://${server}/v1/process`, {
+          method: 'POST',
+          headers: { 
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({
+            task,
+            tool: 'removebackground',
+            files: [{ server_filename, filename: 'image.png' }]
+          })
+        });
+        if (!processRes.ok) throw new Error("Falha no processamento iLoveIMG");
+
+        // 5. Download
+        const downloadRes = await fetch(`https://${server}/v1/download/${task}`, {
+          headers: { 'Authorization': `Bearer ${token}` }
+        });
+        if (!downloadRes.ok) throw new Error("Falha no download iLoveIMG");
+
+        const resultBuffer = await downloadRes.arrayBuffer();
+        const resultBase64 = Buffer.from(resultBuffer).toString('base64');
+        return res.json({ image: `data:image/png;base64,${resultBase64}` });
+      }
+
+      res.status(400).json({ error: "Engine de remoção de fundo inválida." });
     } catch (error) {
-      console.error("Server: Erro na geração de imagem:", error);
-      res.status(500).json({ error: error instanceof Error ? error.message : "Erro interno no servidor" });
+      console.error("Server: Erro no remove-background proxy:", error);
+      res.status(500).json({ error: error instanceof Error ? error.message : "Erro ao remover fundo" });
+    }
+  });
+
+
+  // DynaPictures Proxy
+  app.post("/api/dynapictures/generate", async (req, res) => {
+    try {
+      const { apiKey, designId, params } = req.body;
+      if (!apiKey) return res.status(400).json({ error: "Missing API Key" });
+      if (!designId) return res.status(400).json({ error: "Missing Design ID" });
+
+      console.log(`Server: Gerando imagem com DynaPictures (Design: ${designId})...`);
+
+      const response = await fetch(`https://api.dynapictures.com/v1/design/${designId}/generate`, {
+        method: "POST",
+        headers: { 
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${apiKey}`
+        },
+        body: JSON.stringify({ params })
+      });
+
+      if (!response.ok) {
+        const err = await response.json().catch(() => ({}));
+        throw new Error(err.errorMessage || err.message || `DynaPictures Error: ${response.status}`);
+      }
+
+      const data = await response.json();
+      res.json(data);
+    } catch (error) {
+       console.error("Server: Erro no DynaPictures:", error);
+       res.status(500).json({ error: error instanceof Error ? error.message : "Erro no DynaPictures" });
+    }
+  });
+
+  app.get("/api/dynapictures/designs", async (req, res) => {
+    try {
+      const { apiKey } = req.query;
+      if (!apiKey) return res.status(400).json({ error: "Missing API Key" });
+
+      const response = await fetch("https://api.dynapictures.com/v1/design", {
+        headers: { "Authorization": `Bearer ${apiKey}` }
+      });
+
+      if (!response.ok) throw new Error(`DynaPictures Error: ${response.status}`);
+      const data = await response.json();
+      res.json(data);
+    } catch (error) {
+      res.status(500).json({ error: "Erro ao buscar designs do DynaPictures" });
+    }
+  });
+
+  // Pexels Proxy
+  app.get("/api/pexels/search", async (req, res) => {
+    try {
+      const { apiKey, query, page = 1, per_page = 20, type = 'photos' } = req.query;
+      if (!apiKey) return res.status(400).json({ error: "Missing API Key" });
+      if (!query) return res.status(400).json({ error: "Missing query" });
+
+      const endpoint = type === 'videos' ? 'videos/search' : 'v1/search';
+      console.log(`Server: Buscando ${type} no Pexels: "${query}"...`);
+
+      const response = await fetch(`https://api.pexels.com/${endpoint}?query=${encodeURIComponent(query as string)}&page=${page}&per_page=${per_page}`, {
+        headers: { "Authorization": apiKey as string }
+      });
+
+      if (!response.ok) {
+        throw new Error(`Pexels Error: ${response.status}`);
+      }
+
+      const data = await response.json();
+      res.json(data);
+    } catch (error) {
+      console.error("Server: Erro no Pexels:", error);
+      res.status(500).json({ error: "Erro ao buscar imagens no Pexels" });
     }
   });
 

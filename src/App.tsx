@@ -7,7 +7,6 @@ import { Tools } from './components/Tools';
 import { Settings } from './components/Settings';
 import { SignUp } from './components/SignUp';
 import { Notifications } from './components/Notifications';
-import { Pricing } from './components/Pricing';
 import { BatchProcessor } from './components/BatchProcessor';
 import { UserProfile } from './components/UserProfile';
 import { CookieConsent } from './components/CookieConsent';
@@ -49,8 +48,6 @@ export default function App() {
   const [userRole, setUserRole] = useState<string>('user');
   const [isAuthReady, setIsAuthReady] = useState(false);
   const [notifications, setNotifications] = useState<Notification[]>([]);
-  const [isPricingOpen, setIsPricingOpen] = useState(false);
-  const [isMandatoryPricing, setIsMandatoryPricing] = useState(false);
   const [appConfig, setAppConfig] = useState<AppConfig>({});
   const [monetization, setMonetization] = useState<MonetizationSettings | null>(null);
   const [footerSettings, setFooterSettings] = useState<FooterSettings | null>(null);
@@ -212,32 +209,17 @@ export default function App() {
             
             if (isOwner) {
               setUserRole('admin');
-              setIsMandatoryPricing(false);
             } else {
               const role = data.role || 'user';
-              const planSelected = data.planSelected || false;
-              
-              // Ensure only the owner can be admin, others can be pro or user
-              setUserRole(role === 'admin' ? 'user' : role);
-              
-              // If plan not selected, force pricing modal
-              if (!planSelected) {
-                setIsMandatoryPricing(true);
-                setIsPricingOpen(true);
-              } else {
-                setIsMandatoryPricing(false);
-              }
+              // Ensure only the owner can be admin, others can be 'user'
+              setUserRole(role === 'admin' ? 'user' : 'user');
             }
           } else {
             setUserData(null);
             if (isOwner) {
               setUserRole('admin');
-              setIsMandatoryPricing(false);
             } else {
               setUserRole('user');
-              // New user without doc yet - likely just signed up
-              setIsMandatoryPricing(true);
-              setIsPricingOpen(true);
             }
           }
         }, (error) => {
@@ -335,33 +317,15 @@ export default function App() {
     switch (activeScreen) {
       case 'home':
       case 'upload':
-        return <Home onNavigate={handleNavigate} selectedImage={selectedImage} userRole={userRole} onOpenPricing={() => setIsPricingOpen(true)} appConfig={appConfig} monetization={monetization} footerSettings={footerSettings} notify={notify} />;
+        return <Home onNavigate={handleNavigate} selectedImage={selectedImage} userRole={userRole} appConfig={appConfig} monetization={monetization} footerSettings={footerSettings} notify={notify} />;
       case 'editor':
-        return <Editor imageUrl={selectedImage} onNavigate={handleNavigate} initialTool="background" userRole={userRole} onOpenPricing={() => setIsPricingOpen(true)} notify={notify} />;
-      case 'objects':
-        return <Editor imageUrl={selectedImage} onNavigate={handleNavigate} initialTool="object" userRole={userRole} onOpenPricing={() => setIsPricingOpen(true)} notify={notify} />;
-      case 'upscale':
-        return <Editor imageUrl={selectedImage} onNavigate={handleNavigate} initialTool="upscale" userRole={userRole} onOpenPricing={() => setIsPricingOpen(true)} notify={notify} />;
-      case 'face':
-        return <Editor imageUrl={selectedImage} onNavigate={handleNavigate} initialTool="face" userRole={userRole} onOpenPricing={() => setIsPricingOpen(true)} notify={notify} />;
-      case 'filters':
-        return <Editor imageUrl={selectedImage} onNavigate={handleNavigate} initialTool="filters" userRole={userRole} onOpenPricing={() => setIsPricingOpen(true)} notify={notify} />;
-      case 'crop':
-        return <Editor imageUrl={selectedImage} onNavigate={handleNavigate} initialTool="crop" userRole={userRole} onOpenPricing={() => setIsPricingOpen(true)} notify={notify} />;
-      case 'layers':
-        return <Editor imageUrl={selectedImage} onNavigate={handleNavigate} initialTool="layers" userRole={userRole} onOpenPricing={() => setIsPricingOpen(true)} notify={notify} />;
-      case 'magic':
-        return <Editor imageUrl={selectedImage} onNavigate={handleNavigate} initialTool="magic" userRole={userRole} onOpenPricing={() => setIsPricingOpen(true)} notify={notify} />;
-      case 'outpaint':
-        return <Editor imageUrl={selectedImage} onNavigate={handleNavigate} initialTool="outpaint" userRole={userRole} onOpenPricing={() => setIsPricingOpen(true)} notify={notify} />;
-      case 'variations':
-        return <Editor imageUrl={selectedImage} onNavigate={handleNavigate} initialTool="variations" userRole={userRole} onOpenPricing={() => setIsPricingOpen(true)} notify={notify} />;
+        return <Editor imageUrl={selectedImage} onNavigate={handleNavigate} initialTool="background" userRole={userRole} notify={notify} />;
       case 'tools':
-        return <Tools onNavigate={handleNavigate} selectedImage={selectedImage} monetization={monetization} />;
+        return <Tools onNavigate={handleNavigate} selectedImage={selectedImage} monetization={monetization} userRole={userRole} />;
       case 'history':
-        return <History onNavigate={handleNavigate} userRole={userRole} onOpenPricing={() => setIsPricingOpen(true)} monetization={monetization} />;
+        return <History onNavigate={handleNavigate} userRole={userRole} monetization={monetization} />;
       case 'settings':
-        return <Settings user={user} userData={userData} userRole={userRole} onOpenPricing={() => setIsPricingOpen(true)} appConfig={appConfig} onNotify={notify} theme={theme} onToggleTheme={toggleTheme} />;
+        return <Settings user={user} userData={userData} userRole={userRole} appConfig={appConfig} onNotify={notify} theme={theme} onToggleTheme={toggleTheme} />;
       case 'signup':
         return <SignUp onNavigate={handleNavigate} appConfig={appConfig} />;
       case 'notifications':
@@ -375,14 +339,13 @@ export default function App() {
         return (
           <BatchProcessor 
             userRole={userRole} 
-            onOpenPricing={() => setIsPricingOpen(true)} 
             onNavigate={handleNavigate}
           />
         );
       case 'admin':
-        return userRole === 'admin' ? <AdminDashboard /> : <Home onNavigate={handleNavigate} selectedImage={selectedImage} userRole={userRole} onOpenPricing={() => setIsPricingOpen(true)} />;
+        return userRole === 'admin' ? <AdminDashboard /> : <Home onNavigate={handleNavigate} selectedImage={selectedImage} userRole={userRole} />;
       case 'generate':
-        return <AIGenerator userRole={userRole} onOpenPricing={() => setIsPricingOpen(true)} onNavigate={handleNavigate} />;
+        return <AIGenerator userRole={userRole} onNavigate={handleNavigate} />;
       case 'profile':
         return <UserProfile onNavigate={handleNavigate} userRole={userRole} />;
       case 'terms':
@@ -426,7 +389,6 @@ export default function App() {
         userData={userData}
         userRole={userRole}
         onLogout={handleLogout}
-        onOpenPricing={() => setIsPricingOpen(true)}
         appConfig={appConfig}
         monetization={monetization}
         theme={theme}
@@ -440,7 +402,6 @@ export default function App() {
         userData={userData}
         userRole={userRole}
         hasUnreadNotifications={hasUnreadNotifications}
-        onOpenPricing={() => setIsPricingOpen(true)}
         appConfig={appConfig}
         theme={theme}
         onToggleTheme={toggleTheme}
@@ -460,20 +421,6 @@ export default function App() {
         </AnimatePresence>
       </main>
 
-      <Pricing 
-        isOpen={isPricingOpen} 
-        onClose={() => {
-          if (!isMandatoryPricing) {
-            setIsPricingOpen(false);
-          }
-        }} 
-        currentRole={userRole}
-        isMandatory={isMandatoryPricing}
-        onPlanSelected={() => {
-          setIsMandatoryPricing(false);
-          setIsPricingOpen(false);
-        }}
-      />
       <CookieConsent />
     </div>
   );

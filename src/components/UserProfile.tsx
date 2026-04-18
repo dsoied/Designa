@@ -261,7 +261,7 @@ export function UserProfile({ onNavigate, userRole }: UserProfileProps) {
               <Mail size={14} /> {userData?.email}
             </div>
             <div className="flex items-center gap-2 px-3 py-1 bg-indigo-50 dark:bg-indigo-900/20 rounded-full text-xs font-bold text-indigo-600">
-              <Shield size={14} /> {userRole === 'admin' ? t('admin') : userRole === 'pro' ? t('pro') : t('free')}
+              <Shield size={14} /> Totalmente Grátis
             </div>
           </div>
         </div>
@@ -277,34 +277,22 @@ export function UserProfile({ onNavigate, userRole }: UserProfileProps) {
       </header>
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
-        {/* Card: Plano Atual */}
+        {/* Card: Status da Conta */}
         <section className="md:col-span-2 bg-white dark:bg-slate-900 rounded-[2.5rem] p-8 border border-slate-200 dark:border-slate-800 shadow-sm space-y-6">
           <div className="flex items-center justify-between">
             <h3 className="text-xl font-bold text-slate-900 dark:text-white flex items-center gap-2">
-              <CreditCard className="text-indigo-600" /> {t('subscriptionStatus')}
+              <CreditCard className="text-indigo-600" /> Status da Conta
             </h3>
-            {userRole === 'pro' ? (
-              <span className="px-4 py-1 bg-yellow-400/10 text-yellow-600 rounded-full text-xs font-black uppercase tracking-widest">Ativo</span>
-            ) : (
-              <span className="px-4 py-1 bg-slate-100 dark:bg-slate-800 text-slate-500 rounded-full text-xs font-black uppercase tracking-widest">{t('free')}</span>
-            )}
+            <span className="px-4 py-1 bg-emerald-500/10 text-emerald-600 rounded-full text-xs font-black uppercase tracking-widest">Ativo</span>
           </div>
 
           <div className="p-6 bg-slate-50 dark:bg-slate-800/50 rounded-3xl border border-slate-100 dark:border-slate-800 flex items-center justify-between gap-6">
             <div className="space-y-1">
               <p className="text-sm text-slate-500 font-medium">{t('accountType')}</p>
               <p className="text-2xl font-black text-slate-900 dark:text-white">
-                {userRole === 'pro' ? `Designa ${t('pro')}` : `Designa ${t('free')}`}
+                Designa Unlimited
               </p>
             </div>
-            {userRole !== 'pro' && userRole !== 'admin' && (
-              <button 
-                onClick={() => onNavigate('pricing')}
-                className="px-6 py-3 bg-indigo-600 text-white rounded-2xl font-bold hover:bg-indigo-700 transition-all flex items-center gap-2 shadow-lg shadow-indigo-500/20"
-              >
-                <Crown size={18} /> {t('upgradeToPro')}
-              </button>
-            )}
           </div>
 
           <div className="grid grid-cols-2 gap-4">

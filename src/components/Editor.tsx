@@ -1,90 +1,86 @@
-import { ZoomIn, ZoomOut, Undo, Redo, Eraser, Brush, Download, Maximize2, Upload, Plus, RotateCcw, Sparkles, Sliders, Layers, Crop, Wand2, User, Image as ImageIcon, Camera, Sun, Moon, Palette, Film, Grid3x3, AlignCenter, RotateCw, Zap, Layout, Square, Smartphone, Monitor, Crown, RefreshCw } from 'lucide-react';
+import { ZoomIn, ZoomOut, Undo, Redo, Eraser, Brush, Download, Upload, RotateCcw, Sparkles, Layers, ImageIcon, AlignCenter, RefreshCw, Library, Zap, Wand2, Plus, Loader2, AlertCircle, X } from 'lucide-react';
 import React, { useState, useEffect, useRef, ChangeEvent } from 'react';
-import { motion } from 'motion/react';
-import { GoogleGenAI } from "@google/genai";
-import { db, auth, addDoc, collection, storage, ref, uploadString, getDownloadURL, serverTimestamp, uploadImageToStorage, handleFirestoreError, OperationType } from '../firebase';
+import { motion, AnimatePresence } from 'motion/react';
+import { db, auth, addDoc, collection, storage, ref, uploadString, getDownloadURL, serverTimestamp, uploadImageToStorage, handleFirestoreError, OperationType, doc, getDoc } from '../firebase';
 import { usageService } from '../services/usageService';
 import { WelcomeTour } from './WelcomeTour';
+import { PexelsBrowser } from './PexelsBrowser';
 
 interface EditorProps {
   imageUrl: string | null;
   onNavigate?: (screen: any, imageData?: string) => void;
-  initialTool?: 'background' | 'object' | 'upscale' | 'face' | 'filters' | 'crop' | 'layers' | 'magic' | 'outpaint' | 'variations';
+  initialTool?: 'background';
   userRole?: string;
-  onOpenPricing?: () => void;
   notify?: (title: string, message: string, type?: 'success' | 'error' | 'info') => void;
 }
 
 import { trackImageProcessed } from '../services/analyticsService';
+import { generateImage, refinePrompt, refinePromptOptions } from '../services/geminiService';
 
-export function Editor({ imageUrl, onNavigate, initialTool = 'background', userRole, onOpenPricing, notify }: EditorProps) {
+export function Editor({ imageUrl, onNavigate, initialTool = 'background', userRole, notify }: EditorProps) {
   console.log('Editor: Renderizando. imageUrl:', imageUrl ? 'presente (tamanho: ' + imageUrl.length + ')' : 'ausente');
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [brushSize, setBrushSize] = useState(24);
   const [sensitivity, setSensitivity] = useState(75);
   const [quality, setQuality] = useState(100);
   const [mode, setMode] = useState<'erase' | 'restore' | 'keep'>('erase');
-  const [activeTool, setActiveTool] = useState<'background' | 'object' | 'upscale' | 'face' | 'filters' | 'crop' | 'layers' | 'magic' | 'outpaint' | 'variations'>(initialTool);
-  const [refinement, setRefinement] = useState<'suave' | 'medio' | 'nitido'>('medio');
-  const [upscaleLevel, setUpscaleLevel] = useState<'2K' | '4K' | '8K'>('2K');
+  const [activeTool, setActiveTool] = useState<'background' | 'templates' | 'stock' | 'ai_generate'>(initialTool as any);
+  const [aiPrompt, setAiPrompt] = useState('');
+  const [aiAspectRatio, setAiAspectRatio] = useState<'1:1' | '4:3' | '16:9'>('1:1');
+  const [refinementChoices, setRefinementChoices] = useState<string[]>([]);
+  const [showRefinementModal, setShowRefinementModal] = useState(false);
   const [format, setFormat] = useState<'PNG' | 'JPG' | 'WebP'>('PNG');
-  const [selectedFilter, setSelectedFilter] = useState<string>('vibrante');
-  const [selectedComposition, setSelectedComposition] = useState<string>('thirds');
-  const [selectedFacePreset, setSelectedFacePreset] = useState<string>('natural');
-  const [selectedCrop, setSelectedCrop] = useState<string>('1:1');
-  const [magicInstruction, setMagicInstruction] = useState<string>('');
-  const [selectedMagicPreset, setSelectedMagicPreset] = useState<string>('');
   const [bgColor, setBgColor] = useState<string>('transparent');
-  const [retryCount, setRetryCount] = useState<number>(0);
+  const [bgEngine, setBgEngine] = useState<'clippingmagic' | 'iloveimg'>('clippingmagic');
+  const [dynaPicturesKey, setDynaPicturesKey] = useState<string>('');
+  const [pexelsKey, setPexelsKey] = useState<string>('');
+  const [selectedDesignId, setSelectedDesignId] = useState<string>('');
+  const [templateParams, setTemplateParams] = useState<Record<string, any>>({});
+  const [clippingMagicKey, setClippingMagicKey] = useState<string>('');
+  const [availableDesigns, setAvailableDesigns] = useState<any[]>([]);
+  const [isFetchingDesigns, setIsFetchingDesigns] = useState(false);
+  const [refinement, setRefinement] = useState<'suave' | 'medio' | 'nitido'>('medio');
 
-  const filters = [
-    { id: 'vibrante', name: 'Vibrante', desc: 'Cores intensas', color: 'bg-orange-500', icon: <Sparkles size={14} /> },
-    { id: 'vintage', name: 'Vintage', desc: 'Estilo Retrô', color: 'bg-amber-700', icon: <Camera size={14} /> },
-    { id: 'pb', name: 'P&B', desc: 'Clássico', color: 'bg-slate-700', icon: <Moon size={14} /> },
-    { id: 'cinematico', name: 'Cinema', desc: 'Look Filme', color: 'bg-blue-900', icon: <Film size={14} /> },
-    { id: 'frio', name: 'Frio', desc: 'Tons Azuis', color: 'bg-cyan-500', icon: <Sun size={14} className="rotate-180" /> },
-    { id: 'quente', name: 'Quente', desc: 'Tons Ouro', color: 'bg-yellow-600', icon: <Sun size={14} /> },
-    { id: 'noir', name: 'Noir', desc: 'Dramático', color: 'bg-black', icon: <Moon size={14} className="fill-current" /> },
-    { id: 'pop', name: 'Pop Art', desc: 'Cores Vivas', color: 'bg-pink-500', icon: <Palette size={14} /> },
-  ];
-
-  const compositionPresets = [
-    { id: 'thirds', name: 'Regra dos Terços', desc: 'Equilíbrio clássico', color: 'bg-blue-500', icon: <Grid3x3 size={14} /> },
-    { id: 'centered', name: 'Simetria Central', desc: 'Foco total no meio', color: 'bg-indigo-500', icon: <AlignCenter size={14} /> },
-    { id: 'golden', name: 'Proporção Áurea', desc: 'Harmonia natural', color: 'bg-purple-500', icon: <RotateCw size={14} /> },
-    { id: 'cinematic', name: 'Panorâmico', desc: 'Estilo cinema 21:9', color: 'bg-slate-800', icon: <Film size={14} /> },
-    { id: 'portrait', name: 'Retrato Focado', desc: 'Ideal para pessoas', color: 'bg-pink-500', icon: <User size={14} /> },
-    { id: 'dynamic', name: 'Ângulo Dinâmico', desc: 'Ação e movimento', color: 'bg-orange-500', icon: <Zap size={14} /> },
-  ];
-
-  const facePresets = [
-    { id: 'natural', name: 'Natural', desc: 'Toque leve e real', color: 'bg-emerald-500', icon: <User size={14} /> },
-    { id: 'smooth', name: 'Pele Suave', desc: 'Textura de porcelana', color: 'bg-pink-400', icon: <Sparkles size={14} /> },
-    { id: 'glamour', name: 'Glamour', desc: 'Maquiagem e brilho', color: 'bg-purple-500', icon: <Palette size={14} /> },
-    { id: 'bright', name: 'Iluminado', desc: 'Realce de olhos', color: 'bg-yellow-400', icon: <Sun size={14} /> },
-    { id: 'sharp', name: 'Definido', desc: 'Contornos marcantes', color: 'bg-indigo-500', icon: <Maximize2 size={14} /> },
-  ];
-
-  const cropPresets = [
-    { id: '1:1', name: 'Quadrado', desc: 'Ideal para Feed', ratio: '1:1', icon: <Square size={14} /> },
-    { id: '4:5', name: 'Retrato', desc: 'Instagram Feed', ratio: '4:5', icon: <User size={14} /> },
-    { id: '9:16', name: 'Story', desc: 'TikTok / Reels', ratio: '9:16', icon: <Smartphone size={14} /> },
-    { id: '16:9', name: 'Widescreen', desc: 'YouTube / TV', ratio: '16:9', icon: <Monitor size={14} /> },
-    { id: '2.35:1', name: 'Cinemascopo', desc: 'Look de Filme', ratio: '2.35:1', icon: <Film size={14} /> },
-  ];
-
-  const magicPresets = [
-    { id: 'sky', name: 'Céu Dramático', desc: 'Pôr do sol incrível', prompt: 'Change the sky to a dramatic sunset with vibrant orange and purple colors. Keep the rest of the image natural.' },
-    { id: 'season', name: 'Mudar Estação', desc: 'Inverno/Outono', prompt: 'Transform the environment to look like a snowy winter scene. Add subtle snow on surfaces.' },
-    { id: 'artistic', name: 'Pintura a Óleo', desc: 'Estilo clássico', prompt: 'Transform this image into a high-quality oil painting with visible brushstrokes and rich textures.' },
-    { id: 'cyberpunk', name: 'Cyberpunk', desc: 'Neon e futuro', prompt: 'Apply a cyberpunk aesthetic with neon lights, futuristic elements, and a dark, moody atmosphere.' },
-    { id: 'fantasy', name: 'Fantasia', desc: 'Mundo mágico', prompt: 'Add magical elements like floating particles, ethereal lighting, and a fantasy world feel.' },
-  ];
-
-  // Update activeTool if initialTool changes (e.g. navigating between tools from sidebar)
   useEffect(() => {
-    setActiveTool(initialTool);
-  }, [initialTool]);
+    const fetchAIConfig = async () => {
+      try {
+        const aiConfigRef = doc(db, 'config', 'ai');
+        const snap = await getDoc(aiConfigRef);
+        if (snap.exists()) {
+          const data = snap.data();
+          if (data.clippingMagicKey) setClippingMagicKey(data.clippingMagicKey);
+          if (data.dynaPicturesKey) setDynaPicturesKey(data.dynaPicturesKey);
+          if (data.pexelsKey) setPexelsKey(data.pexelsKey);
+        }
+      } catch (error) {
+        console.error("Editor: Erro ao buscar config de IA:", error);
+      }
+    };
+    fetchAIConfig();
+  }, []);
+
+  useEffect(() => {
+    if (activeTool === 'templates' && dynaPicturesKey && availableDesigns.length === 0) {
+      const fetchDesigns = async () => {
+        setIsFetchingDesigns(true);
+        try {
+          const response = await fetch(`/api/dynapictures/designs?apiKey=${dynaPicturesKey}`);
+          if (response.ok) {
+            const data = await response.json();
+            setAvailableDesigns(data.items || []);
+            if (data.items?.length > 0) {
+              setSelectedDesignId(data.items[0].id);
+            }
+          }
+        } catch (error) {
+          console.error("Editor: Erro ao buscar designs:", error);
+        } finally {
+          setIsFetchingDesigns(false);
+        }
+      };
+      fetchDesigns();
+    }
+  }, [activeTool, dynaPicturesKey]);
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -243,10 +239,9 @@ export function Editor({ imageUrl, onNavigate, initialTool = 'background', userR
           if (items[i].type.indexOf('image') !== -1) {
             const blob = items[i].getAsFile();
             if (blob) {
-              const maxSize = (userRole === 'pro' || userRole === 'admin') ? 20 * 1024 * 1024 : 10 * 1024 * 1024;
+              const maxSize = 20 * 1024 * 1024; // 20MB limit for everyone
               if (blob.size > maxSize) {
                 console.log(`Editor: Imagem colada excede o limite de ${maxSize / 1024 / 1024}MB`);
-                onOpenPricing?.();
                 return;
               }
               const reader = new FileReader();
@@ -270,7 +265,7 @@ export function Editor({ imageUrl, onNavigate, initialTool = 'background', userR
     console.log('Editor: displayImage atualizado para:', displayImage ? 'imagem presente (tamanho: ' + displayImage.length + ')' : 'vazio');
   }, [displayImage]);
 
-  const handleApplyChanges = async (isRetry = false) => {
+  const handleApplyChanges = async () => {
     if (!displayImage) return;
 
     // Auth check
@@ -284,423 +279,187 @@ export function Editor({ imageUrl, onNavigate, initialTool = 'background', userR
       return;
     }
 
-    // Usage check for free users
-    const usage = await usageService.checkUsage(userRole || 'free', activeTool);
-    if (!usage.allowed) {
-      console.log(`Editor: Limite de uso diário atingido para o recurso "${activeTool}" no plano gratuito`);
-      onOpenPricing?.();
-      return;
-    }
-
-    const isPro = userRole === 'pro' || userRole === 'admin';
-
-    // Enforce Pro-only tools
-    const proTools = ['magic', 'outpaint', 'variations'];
-    if (proTools.includes(activeTool) && !isPro) {
-      console.log(`Editor: Recurso "${activeTool}" é exclusivo para usuários Pro`);
-      onOpenPricing?.();
-      return;
-    }
-
-    // Enforce Pro-only upscale levels
-    if (activeTool === 'upscale' && (upscaleLevel === '4K' || upscaleLevel === '8K') && !isPro) {
-      console.log(`Editor: Upscale "${upscaleLevel}" é exclusivo para usuários Pro`);
-      onOpenPricing?.();
-      return;
-    }
+    const isPro = true; // Everything is free now
 
     setIsProcessing(true);
-    
-    // Reset retry count if it's a fresh call
-    if (!isRetry) {
-      setRetryCount(0);
-      console.log('Editor: Aplicando alterações reais com Gemini API...');
-    } else {
-      console.log(`Editor: Tentando novamente (${retryCount + 1}/3) após erro de cota...`);
-    }
-    
+    setProcessedImage(null);
+    setViewMode('original');
+
     try {
-      const apiKey = import.meta.env.VITE_GEMINI_API_KEY || '';
-      const ai = new GoogleGenAI({ apiKey });
-      
-      // Resize image if it's too large to save quota/bandwidth
-      let finalBase64Data = displayImage.split(',')[1];
-      let finalMimeType = displayImage.match(/^data:([^;]+);base64,/)?.[1] || 'image/png';
+      // Logic for AI Image Generation (Gemini)
+      if (activeTool === 'ai_generate') {
+         if (!aiPrompt.trim()) {
+           if (notify) notify('Aviso', 'Por favor, insira um comando para gerar a imagem.', 'info');
+           setIsProcessing(false);
+           return;
+         }
 
-      // Simple resizing logic for very large images (> 1600px)
-      const resizeImage = async (base64: string, maxDim: number): Promise<string> => {
-        return new Promise((resolve) => {
-          const img = new Image();
-          img.onload = () => {
-            if (img.width <= maxDim && img.height <= maxDim) {
-              resolve(base64);
-              return;
-            }
-            const canvas = document.createElement('canvas');
-            let width = img.width;
-            let height = img.height;
-            if (width > height) {
-              if (width > maxDim) {
-                height *= maxDim / width;
-                width = maxDim;
-              }
-            } else {
-              if (height > maxDim) {
-                width *= maxDim / height;
-                height = maxDim;
-              }
-            }
-            canvas.width = width;
-            canvas.height = height;
-            const ctx = canvas.getContext('2d');
-            ctx?.drawImage(img, 0, 0, width, height);
-            resolve(canvas.toDataURL('image/png').split(',')[1]);
-          };
-          img.src = `data:image/png;base64,${base64}`;
-        });
-      };
+         console.log(`Editor: Gerando imagem com Gemini (Flash 2.5)... Prompt: ${aiPrompt}`);
+         
+         // 1. Refine prompt (optional but recommended for better results)
+         const finalPrompt = await refinePrompt(aiPrompt);
+         console.log(`Editor: Prompt refinado: ${finalPrompt}`);
 
-      // Only resize if not upscaling
-      if (activeTool !== 'upscale') {
-        finalBase64Data = await resizeImage(finalBase64Data, 1600);
-      }
+         // 2. Generate
+         const resultUrl = await generateImage(finalPrompt, aiAspectRatio);
 
-      // We will use the standard model but with a "Super-Resolution" prompt to maximize quality for free
-      let modelName = 'gemini-2.5-flash-image';
-      let config: any = {};
-
-      let prompt = "";
-      if (activeTool === 'background' || activeTool === 'object') {
-        // Create a temporary canvas to merge image and mask
-        const tempCanvas = document.createElement('canvas');
-        const img = new Image();
-        img.src = displayImage;
-        await new Promise(resolve => img.onload = resolve);
-        
-        tempCanvas.width = img.naturalWidth;
-        tempCanvas.height = img.naturalHeight;
-        const tempCtx = tempCanvas.getContext('2d');
-        
-        if (tempCtx && maskCanvasRef.current) {
-          // Draw original image
-          tempCtx.drawImage(img, 0, 0);
-          
-          // Create a filtered mask canvas
-          const maskCanvas = maskCanvasRef.current;
-          const filteredMaskCanvas = document.createElement('canvas');
-          filteredMaskCanvas.width = maskCanvas.width;
-          filteredMaskCanvas.height = maskCanvas.height;
-          const fCtx = filteredMaskCanvas.getContext('2d');
-          
-          if (fCtx) {
-            fCtx.drawImage(maskCanvas, 0, 0);
-            const imageData = fCtx.getImageData(0, 0, filteredMaskCanvas.width, filteredMaskCanvas.height);
-            const data = imageData.data;
-            
-            let hasMask = false;
-            for (let i = 0; i < data.length; i += 4) {
-              if (data[i + 3] > 0) {
-                hasMask = true;
-                break;
-              }
-            }
-
-            if (hasMask) {
-              // For Object removal, we only care about RED. 
-              // For Background removal, we care about RED (Background) and GREEN (Foreground).
-              for (let i = 0; i < data.length; i += 4) {
-                const r = data[i];
-                const g = data[i + 1];
-                const b = data[i + 2];
-                const a = data[i + 3];
-                
-                if (a > 0) {
-                  if (activeTool === 'object') {
-                    // Object removal: Only red matters.
-                    data[i] = 255;
-                    data[i + 1] = 0;
-                    data[i + 2] = 0;
-                    data[i + 3] = 255;
-                  } else {
-                    // Background removal: Keep Red as Red, Green as Green.
-                    if (r > g && r > 100) {
-                      data[i] = 255; data[i+1] = 0; data[i+2] = 0;
-                    } else if (g > r && g > 100) {
-                      data[i] = 0; data[i+1] = 255; data[i+2] = 0;
-                    }
-                    data[i + 3] = 255;
-                  }
-                }
-              }
-              fCtx.putImageData(imageData, 0, 0);
-              
-              // Draw filtered mask onto image
-              tempCtx.globalAlpha = 0.7; // Make it semi-transparent so AI sees both
-              tempCtx.drawImage(filteredMaskCanvas, 0, 0, tempCanvas.width, tempCanvas.height);
-              
-              const mergedDataUrl = tempCanvas.toDataURL('image/png');
-              finalBase64Data = mergedDataUrl.split(',')[1];
-              finalMimeType = 'image/png';
-            }
-          }
-          
-          // Clear mask after merging
-          clearMask();
-        }
-
-        if (activeTool === 'background') {
-          prompt = `Act as an expert AI image segmentation engine. Your goal is to perform a high-precision background removal. 
-          I have provided hints on the image:
-          - Areas marked in RED are BACKGROUND (to be removed).
-          - Areas marked in GREEN are FOREGROUND (to be kept).
-          If no markings are present, detect the primary subject automatically.
-          
-          Sensitivity: ${sensitivity}%. Refinement: ${refinement}.
-          Output ONLY the resulting image as a base64-encoded PNG. ${bgColor === 'transparent' ? 'The background must be completely transparent (alpha channel).' : `Replace the background with a solid ${bgColor} color.`}
-          Do not provide any text, markdown, or conversational response. Just the image data.`;
-        } else {
-          prompt = `Act as an expert AI image retouching engine. Your goal is to perform high-precision object removal (inpainting). 
-          I have marked the object to be removed in RED on the provided image. 
-          Please remove the area marked in RED and fill it seamlessly with the surrounding background.
-          Output ONLY the resulting image as a base64-encoded PNG. 
-          CRITICAL: DO NOT provide any text, markdown, or conversational response. If you understand, return ONLY the image data.`;
-        }
-      } else if (activeTool === 'upscale') {
-        prompt = `Act as a world-class AI Super-Resolution and Image Restoration engine. 
-        Your task is to perform an EXTREME high-fidelity upscale to ${upscaleLevel} resolution.
-        
-        TECHNICAL REQUIREMENTS:
-        1. RECONSTRUCT missing details: Analyze textures (skin, fabric, nature) and synthesize high-frequency details that were lost.
-        2. NEURAL DENOISING: Remove all JPEG artifacts and ISO noise without losing sharpness.
-        3. EDGE REFINEMENT: Make all outlines perfectly crisp and smooth.
-        4. COLOR DEPTH: Enhance micro-contrast and dynamic range to simulate a professional RAW photograph.
-        5. TARGET: The final output must look like it was shot with a high-end 8K cinema camera.
-        
-        Output ONLY the resulting image as a base64-encoded PNG. NO TEXT. NO MARKDOWN.`;
-      } else if (activeTool === 'face') {
-        const preset = facePresets.find(p => p.id === selectedFacePreset);
-        prompt = `Act as a world-class AI facial retouching and beauty engine. Your goal is to perform a high-precision facial enhancement.
-        Target Style: "${preset?.name}" (${preset?.desc}).
-        Intensity: ${sensitivity}%. Quality: ${quality}%.
-        
-        TECHNICAL REQUIREMENTS:
-        1. SKIN RETOUCHING: Smooth skin texture while preserving natural pores and details. Remove blemishes, acne, and fine lines.
-        2. FEATURE ENHANCEMENT: ${preset?.id === 'bright' ? 'Focus on brightening the eyes and whitening teeth.' : 
-                                preset?.id === 'sharp' ? 'Enhance facial contours, jawline, and cheekbones.' : 
-                                preset?.id === 'glamour' ? 'Apply a subtle digital makeup effect and soft lighting.' : 
-                                'Enhance facial features naturally and harmoniously.'}
-        3. LIGHTING: Adjust facial lighting to be more flattering and professional.
-        4. NATURAL LOOK: Ensure the result looks realistic and not over-processed.
-        
-        Output ONLY the resulting image as a base64-encoded PNG. NO TEXT. NO MARKDOWN.`;
-      } else if (activeTool === 'filters') {
-        const filterObj = filters.find(f => f.id === selectedFilter);
-        prompt = `Act as an expert AI image filtering engine. Your goal is to apply the "${filterObj?.name}" artistic filter to this photograph. 
-        Filter Description: ${filterObj?.desc}.
-        Intensity: ${sensitivity}%.
-        Enhance colors, mood, and overall aesthetic according to the chosen style.
-        Output ONLY the resulting image as a base64-encoded PNG. Do not provide any text, markdown, or conversational response. Just the image data.`;
-      } else if (activeTool === 'crop') {
-        const preset = cropPresets.find(p => p.id === selectedCrop);
-        prompt = `Act as an expert AI image composition and cropping engine. Your goal is to perform a smart crop and adjustment of the framing.
-        Target Aspect Ratio: ${preset?.ratio} (${preset?.name}).
-        
-        TECHNICAL REQUIREMENTS:
-        1. SMART CROP: Detect the most important subject in the image and ensure it is perfectly positioned according to the ${preset?.ratio} aspect ratio.
-        2. COMPOSITION: Apply professional photography rules (like the rule of thirds) to make the crop visually appealing.
-        3. CONTENT PRESERVATION: Do not cut off important parts of the subject (like heads or limbs).
-        4. OUTPUT: Return ONLY the cropped image as a base64-encoded PNG.
-        
-        CRITICAL: DO NOT provide any text, markdown, or conversational response. Return ONLY the image data.`;
-      } else if (activeTool === 'layers') {
-        const preset = compositionPresets.find(p => p.id === selectedComposition);
-        prompt = `Act as an expert AI image composition and layout engine. Your goal is to re-compose and enhance the visual structure of this photograph.
-        Target Composition Style: "${preset?.name}" (${preset?.desc}).
-        Intensity of Adjustment: ${sensitivity}%.
-        
-        TECHNICAL GOALS:
-        1. RE-FRAME: Adjust the cropping and positioning of elements to follow the ${preset?.name} principle.
-        2. DEPTH ENHANCEMENT: Use AI to create a stronger sense of foreground, middle ground, and background.
-        3. VISUAL BALANCE: Balance the weights of colors and subjects within the frame.
-        4. SEAMLESS EXPANSION: If needed to achieve the composition, use generative fill to expand the edges naturally.
-        
-        Output ONLY the resulting image as a base64-encoded PNG. NO TEXT. NO MARKDOWN.`;
-      } else if (activeTool === 'outpaint') {
-        prompt = `Act as an expert AI outpainting and image expansion engine. Your goal is to expand the boundaries of this image.
-        TECHNICAL REQUIREMENTS:
-        1. SEAMLESS EXPANSION: Create new content that naturally continues the existing scene, lighting, and style.
-        2. CONTEXT AWARENESS: Understand the environment and add logical elements (e.g., more sky, more landscape, more background).
-        3. QUALITY: Maintain the same resolution and detail level as the original.
-        
-        Output ONLY the resulting image as a base64-encoded PNG. NO TEXT. NO MARKDOWN.`;
-      } else if (activeTool === 'variations') {
-        prompt = `Act as an expert AI image variation engine. Your goal is to create a new version of this image that maintains the same core style, subject, and composition but with creative variations.
-        TECHNICAL REQUIREMENTS:
-        1. STYLE PRESERVATION: Keep the artistic style, color palette, and lighting of the original.
-        2. CREATIVE VARIATION: Change subtle details, poses, or background elements to create a fresh but familiar version.
-        3. QUALITY: Ensure the output is high-resolution and professional.
-        
-        Output ONLY the resulting image as a base64-encoded PNG. NO TEXT. NO MARKDOWN.`;
-      } else if (activeTool === 'magic') {
-        const preset = magicPresets.find(p => p.id === selectedMagicPreset);
-        const finalInstruction = magicInstruction || preset?.prompt || 'Enhance and modify the image creatively based on the visual context.';
-        
-        prompt = `Act as a world-class AI generative editing engine. Your goal is to transform the image based on the following instruction:
-        
-        INSTRUCTION: "${finalInstruction}"
-        
-        TECHNICAL REQUIREMENTS:
-        1. GENERATIVE EDITING: Use advanced generative AI to modify the image while maintaining the core structure and identity of the original subjects unless specified otherwise.
-        2. SEAMLESS INTEGRATION: Any new elements or changes must blend perfectly with the existing lighting, shadows, and textures.
-        3. CREATIVITY: Be creative but realistic in the execution of the request.
-        4. OUTPUT: Return ONLY the modified image as a base64-encoded PNG.
-        
-        CRITICAL: DO NOT provide any text, markdown, or conversational response. Return ONLY the image data.`;
-      } else {
-        prompt = "Process image. Return ONLY image.";
-      }
-
-      const response = await ai.models.generateContent({
-        model: modelName,
-        contents: {
-          parts: [
-            { text: prompt },
-            {
-              inlineData: {
-                data: finalBase64Data,
-                mimeType: finalMimeType,
-              },
-            },
-          ],
-        },
-        config: {
-          candidateCount: 1
-        }
-      });
-
-      let foundImage = false;
-      const candidates = response.candidates;
-      
-      if (candidates && candidates.length > 0 && candidates[0].content?.parts) {
-        for (const part of candidates[0].content.parts) {
-          if (part.inlineData?.data) {
-            const resultBase64 = part.inlineData.data;
-            const resultMimeType = part.inlineData.mimeType || 'image/png';
-            const resultUrl = `data:${resultMimeType};base64,${resultBase64}`;
-            
+         if (resultUrl) {
             setProcessedImage(resultUrl);
             setViewMode('compare');
             addToHistory(resultUrl);
-            trackImageProcessed(activeTool);
-            foundImage = true;
-            console.log('Editor: Sucesso! Imagem recebida.');
-
-            // Increment usage
-            await usageService.incrementUsage(userRole || 'free', activeTool);
-
-            // Save to Firestore and Storage if user is logged in
+            trackImageProcessed('ai_generate');
+            
             if (auth.currentUser) {
-              const toolName = activeTool === 'background' ? 'Remoção de Fundo' :
-                               activeTool === 'object' ? 'Remoção de Objeto' :
-                               activeTool === 'upscale' ? `Upscale ${upscaleLevel}` :
-                               activeTool === 'face' ? 'Retoque Facial' :
-                               activeTool === 'filters' ? 'Filtro Artístico' :
-                               activeTool === 'crop' ? 'Corte Inteligente' :
-                               activeTool === 'layers' ? 'Composição' :
-                               activeTool === 'outpaint' ? 'Expansão Generativa' :
-                               activeTool === 'variations' ? 'Variações de Imagem' :
-                               activeTool === 'magic' ? 'Edição Mágica' : 'Edição IA';
+              const fileName = `AI_Gen_${Date.now()}.png`;
+              const storageUrl = await uploadImageToStorage(resultUrl, fileName, `users/${auth.currentUser.uid}/projects`);
+              await addDoc(collection(db, 'projects'), {
+                uid: auth.currentUser.uid,
+                name: fileName,
+                date: new Date().toISOString().split('T')[0],
+                createdAt: serverTimestamp(),
+                status: 'Finalizado',
+                type: 'Geração por IA (Gemini)',
+                imageUrl: storageUrl
+              });
+            }
 
-              try {
-                const fileName = `Projeto_${Date.now()}.png`;
-                const storageUrl = await uploadImageToStorage(resultUrl, fileName, `users/${auth.currentUser.uid}/projects`);
+            setIsProcessing(false);
+            if (notify) notify('Sucesso', 'Imagem gerada com IA!', 'success');
+            return;
+         } else {
+           throw new Error("Nenhum resultado recebido da geração de imagem.");
+         }
+      }
 
-                const projectsPath = 'projects';
-                try {
-                  await addDoc(collection(db, projectsPath), {
-                    id: Date.now().toString(),
+      // Logic for DynaPictures
+      if (activeTool === 'templates') {
+        if (!dynaPicturesKey) {
+          if (notify) notify('Chave Necessária', 'Configure sua chave DynaPictures nas configurações.', 'info');
+          setIsProcessing(false);
+          return;
+        }
+        if (!selectedDesignId) {
+          if (notify) notify('Design Necessário', 'Selecione um design para processar.', 'info');
+          setIsProcessing(false);
+          return;
+        }
+
+        console.log(`Editor: Usando DynaPictures (Design: ${selectedDesignId})...`);
+        const response = await fetch('/api/dynapictures/generate', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            apiKey: dynaPicturesKey,
+            designId: selectedDesignId,
+            params: templateParams
+          })
+        });
+
+        if (!response.ok) {
+          const errData = await response.json();
+          throw new Error(errData.error || 'Erro na DynaPictures API');
+        }
+
+        const data = await response.json();
+        const resultUrl = data.imageUrl || data.image_url;
+
+        if (resultUrl) {
+          setProcessedImage(resultUrl);
+          setViewMode('compare');
+          addToHistory(resultUrl);
+          trackImageProcessed(`dynapictures_${selectedDesignId}`);
+          
+          if (auth.currentUser) {
+            const fileName = `Dyna_${Date.now()}.png`;
+            const storageUrl = await uploadImageToStorage(resultUrl, fileName, `users/${auth.currentUser.uid}/projects`);
+            await addDoc(collection(db, 'projects'), {
+              uid: auth.currentUser.uid,
+              name: fileName,
+              date: new Date().toISOString().split('T')[0],
+              createdAt: serverTimestamp(),
+              status: 'Finalizado',
+              type: 'DynaPictures Template',
+              imageUrl: storageUrl
+            });
+          }
+
+          setIsProcessing(false);
+          if (notify) notify('Sucesso', 'Template processado com sucesso!', 'success');
+          return;
+        } else {
+          throw new Error("Nenhum resultado recebido da DynaPictures API");
+        }
+      }
+
+      // Logic for tools that use Clipping Magic
+      if (activeTool === 'background') {
+        if (bgEngine === 'clippingmagic') {
+          try {
+            console.log("Editor: Usando Clipping Magic...");
+            let response = await fetch("/api/remove-background", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ image: displayImage, test: false, engine: bgEngine })
+            });
+            
+            // If it fails with 402 (Payment Required), try test mode as fallback
+            if (response.status === 402 && bgEngine === 'clippingmagic') {
+              console.warn("Editor: Clipping Magic sem créditos, tentando modo teste...");
+              response = await fetch("/api/remove-background", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ image: displayImage, test: true, engine: 'clippingmagic' })
+              });
+              if (response.ok && notify) {
+                notify('Modo Teste', 'Usando modo de teste do Clipping Magic (pode conter marca d\'água).', 'info');
+              }
+            }
+
+            if (!response.ok) {
+              const errData = await response.json();
+              throw new Error(errData.error || `Erro no Clipping Magic: ${response.status}`);
+            }
+
+            const data = await response.json();
+            if (data.image) {
+                const resultUrl = data.image;
+                setProcessedImage(resultUrl);
+                setViewMode('compare');
+                addToHistory(resultUrl);
+                trackImageProcessed(activeTool);
+                
+                if (auth.currentUser) {
+                  const fileName = `ClipMagic_${Date.now()}.png`;
+                  const storageUrl = await uploadImageToStorage(resultUrl, fileName, `users/${auth.currentUser.uid}/projects`);
+                  await addDoc(collection(db, 'projects'), {
                     uid: auth.currentUser.uid,
-                    name: `Projeto_${Date.now()}`,
+                    name: fileName,
                     date: new Date().toISOString().split('T')[0],
                     createdAt: serverTimestamp(),
                     status: 'Finalizado',
-                    type: toolName,
+                    type: 'Remoção de Fundo (Clipping Magic)',
                     imageUrl: storageUrl
                   });
-                } catch (err) {
-                  handleFirestoreError(err, OperationType.WRITE, projectsPath);
                 }
-                
-                const notificationsPath = 'notifications';
-                try {
-                  await addDoc(collection(db, notificationsPath), {
-                    id: Date.now().toString(),
-                    uid: auth.currentUser.uid,
-                    title: 'Processamento Concluído',
-                    message: `O recurso "${toolName}" foi aplicado com sucesso e salvo no seu histórico.`,
-                    time: 'Agora',
-                    createdAt: serverTimestamp(),
-                    type: 'success',
-                    isRead: false
-                  });
-                } catch (err) {
-                  handleFirestoreError(err, OperationType.WRITE, notificationsPath);
-                }
-                console.log('Editor: Projeto e notificação salvos no Firestore');
-              } catch (err) {
-                console.error('Editor: Erro ao salvar no Firestore:', err);
+
+                setIsProcessing(false);
+                if (notify) notify('Sucesso', 'Fundo removido com Clipping Magic.', 'success');
+                return;
               }
-            }
-            break;
+          } catch (cmErr) {
+            console.error("Editor: Erro no Clipping Magic:", cmErr);
+            if (notify) notify('Erro Clipping Magic', 'Falha no processamento', 'error');
+            setIsProcessing(false);
+            return;
           }
         }
       }
 
-      if (!foundImage) {
-        const textResponse = response.text;
-        console.warn('Editor: IA não enviou imagem. Resposta:', textResponse);
-        if (notify) {
-          notify('Erro da IA', `A IA não enviou uma imagem de retorno. Resposta: ${textResponse || 'Sem detalhes.'}`, 'error');
-        } else {
-          alert(`A IA não enviou uma imagem de retorno. Resposta da IA: ${textResponse || 'Sem resposta detalhada.'}`);
-        }
-      } else {
-        if (notify) {
-          notify('Sucesso', 'Alterações aplicadas com sucesso! Agora você pode comparar com a original.', 'success');
-        } else {
-          alert('Alterações aplicadas com sucesso! Agora você pode comparar com a original.');
-        }
-      }
+      throw new Error("Esta ferramenta requer uma API dedicada configurada.");
 
-    } catch (error: any) {
-      console.error('Editor: Erro ao processar imagem com Gemini:', error);
-      
-      const errorMsg = error.message || String(error);
-      const errorStr = JSON.stringify(error);
-      const isQuotaError = errorMsg.includes('429') || 
-                          errorMsg.includes('RESOURCE_EXHAUSTED') || 
-                          errorStr.includes('429') || 
-                          errorStr.includes('RESOURCE_EXHAUSTED');
-
-      if (isQuotaError) {
-        if (retryCount < 2) {
-          const nextRetry = retryCount + 1;
-          setRetryCount(nextRetry);
-          // Exponential backoff: 2s, 5s, 10s
-          const delay = nextRetry === 1 ? 2000 : nextRetry === 2 ? 5000 : 10000;
-          console.log(`Editor: Erro de cota. Tentando novamente em ${delay/1000}s...`);
-          setTimeout(() => handleApplyChanges(true), delay);
-          return;
-        }
-        setKeyPromptReason('quota-exceeded');
-        setShowKeyPrompt(true);
-      } else {
-        if (notify) {
-          notify('Erro de Processamento', 'Ocorreu um erro ao processar a imagem. O servidor pode estar instável ou a imagem é muito grande. Tente novamente em instantes.', 'error');
-        } else {
-          alert('Ocorreu um erro ao processar a imagem. O servidor pode estar instável ou a imagem é muito grande. Tente novamente em instantes.');
-        }
-      }
+    } catch (error) {
+      console.error('Editor: Erro fatal no processamento:', error);
+      if (notify) notify('Erro de Processamento', error instanceof Error ? error.message : 'Falha ao processar imagem', 'error');
     } finally {
       setIsProcessing(false);
     }
@@ -732,24 +491,14 @@ export function Editor({ imageUrl, onNavigate, initialTool = 'background', userR
       return;
     }
 
-    // Free user limit: 10MB, Pro/Admin: 20MB
-    const limit = (userRole === 'pro' || userRole === 'admin') ? 20 * 1024 * 1024 : 10 * 1024 * 1024;
+    // Multi-tier limit: 20MB for everyone
+    const limit = 20 * 1024 * 1024;
     if (file.size > limit) {
-      if (userRole !== 'pro' && userRole !== 'admin') {
-        const msg = 'O arquivo é muito grande para o plano gratuito (limite 10MB). Faça upgrade para Pro para enviar arquivos de até 20MB.';
-        if (notify) {
-          notify('Limite Excedido', msg, 'error');
-        } else {
-          alert(msg);
-        }
-        onOpenPricing?.();
+      const msg = 'O arquivo excede o limite de 20MB.';
+      if (notify) {
+        notify('Erro de Tamanho', msg, 'error');
       } else {
-        const msg = 'O arquivo excede o limite de 20MB.';
-        if (notify) {
-          notify('Erro de Tamanho', msg, 'error');
-        } else {
-          alert(msg);
-        }
+        alert(msg);
       }
       return;
     }
@@ -818,7 +567,7 @@ export function Editor({ imageUrl, onNavigate, initialTool = 'background', userR
       return;
     }
 
-    if ((activeTool === 'object' || activeTool === 'background') && isDrawing && maskCanvasRef.current && !isPanning) {
+    if (activeTool === 'background' && isDrawing && maskCanvasRef.current && !isPanning) {
       const canvas = maskCanvasRef.current;
       const ctx = canvas.getContext('2d');
       if (ctx) {
@@ -878,7 +627,7 @@ export function Editor({ imageUrl, onNavigate, initialTool = 'background', userR
       return;
     }
 
-    if ((activeTool === 'object' || activeTool === 'background') && maskCanvasRef.current) {
+    if (activeTool === 'background' && maskCanvasRef.current) {
       setIsDrawing(true);
       const canvas = maskCanvasRef.current;
       const rect = e.currentTarget.getBoundingClientRect();
@@ -963,7 +712,7 @@ export function Editor({ imageUrl, onNavigate, initialTool = 'background', userR
                 <button 
                   onClick={() => {
                     setShowKeyPrompt(false);
-                    handleApplyChanges(false);
+                    handleApplyChanges();
                   }}
                   className="w-full py-3 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-xl transition-all shadow-lg shadow-indigo-500/20 flex items-center justify-center gap-2 text-sm"
                 >
@@ -1011,12 +760,12 @@ export function Editor({ imageUrl, onNavigate, initialTool = 'background', userR
         <div id="editor-topbar" className="flex flex-col sm:flex-row justify-between items-start sm:items-end gap-4">
           <div>
             <h2 className="text-2xl md:text-3xl font-headline font-extrabold tracking-tight text-slate-900 dark:text-white">
-              {activeTool === 'background' ? 'Remover Fundo' : 'Remover Objeto'}
+              {activeTool === 'background' ? 'Remover Fundo' : 
+               activeTool === 'templates' ? 'Templates Dinâmicos' : 'Biblioteca Pexels'}
             </h2>
             <p className="text-slate-500 dark:text-slate-400 text-sm mt-1">
-              {activeTool === 'background' 
-                ? 'Isole o objeto principal com precisão de IA.' 
-                : 'Elimine elementos indesejados da sua imagem.'}
+              {activeTool === 'background' ? 'Isole o objeto principal com precisão de IA.' : 
+               activeTool === 'templates' ? 'Crie artes incríveis com designs prontos.' : 'Busque milhões de fotos gratuitas de alta qualidade.'}
             </p>
           </div>
           <div className="flex flex-wrap gap-2 w-full sm:w-auto">
@@ -1084,19 +833,19 @@ export function Editor({ imageUrl, onNavigate, initialTool = 'background', userR
             {displayImage ? (
               <>
                 {/* Main View Area */}
-                <div 
-                  className={`relative w-full h-full flex items-center justify-center p-4 md:p-8 z-10 ${activeTool === 'object' ? 'cursor-none' : ''}`}
-                  onMouseMove={handleMouseMove}
-                  onMouseDown={handleMouseDown}
-                  onMouseUp={handleMouseUp}
-                  onMouseLeave={() => {
-                    setIsMouseOverImage(false);
-                    setIsDrawing(false);
-                  }}
-                  onMouseEnter={() => setIsMouseOverImage(true)}
-                >
+                  <div 
+                    className={`relative w-full h-full flex items-center justify-center p-4 md:p-8 z-10 ${activeTool === 'background' ? 'cursor-none' : ''}`}
+                    onMouseMove={handleMouseMove}
+                    onMouseDown={handleMouseDown}
+                    onMouseUp={handleMouseUp}
+                    onMouseLeave={() => {
+                      setIsMouseOverImage(false);
+                      setIsDrawing(false);
+                    }}
+                    onMouseEnter={() => setIsMouseOverImage(true)}
+                  >
                   {/* Visual Brush Cursor */}
-                  {activeTool === 'object' && isMouseOverImage && !isProcessing && (
+                  {activeTool === 'background' && isMouseOverImage && !isProcessing && (
                     <div 
                       className={`absolute pointer-events-none z-50 border-2 shadow-[0_0_0_1px_rgba(0,0,0,0.5)] rounded-full backdrop-blur-[1px] transition-colors duration-200 ${
                         mode === 'erase' ? 'border-white bg-red-500/20' : 'border-white bg-green-500/20'
@@ -1147,7 +896,7 @@ export function Editor({ imageUrl, onNavigate, initialTool = 'background', userR
                   )}
 
                   {/* Mask Drawing Canvas */}
-                  {(activeTool === 'object' || activeTool === 'background') && (
+                  {activeTool === 'background' && (
                     <div className="absolute inset-0 flex items-center justify-center p-4 md:p-8 pointer-events-none z-20">
                       <canvas 
                         ref={maskCanvasRef}
@@ -1290,12 +1039,10 @@ export function Editor({ imageUrl, onNavigate, initialTool = 'background', userR
           <div className="space-y-6">
             <div className="flex justify-between items-center">
               <h3 className="text-sm font-bold uppercase tracking-widest text-indigo-600 dark:text-indigo-400">
-                {activeTool === 'filters' ? 'Filtros Artísticos' : 
-                 activeTool === 'upscale' ? 'Melhorar Qualidade' : 
-                 activeTool === 'object' ? 'Remover Objetos' : 
-                 activeTool === 'outpaint' ? 'Expansão Generativa' :
-                 activeTool === 'variations' ? 'Variações de Imagem' :
-                 activeTool === 'background' ? 'Remover Fundo' : 'Modo de Edição'}
+                {activeTool === 'templates' ? 'DynaPictures Templates' :
+                 activeTool === 'stock' ? 'Biblioteca Pexels' :
+                 activeTool === 'background' ? 'Remover Fundo' : 
+                 activeTool === 'ai_generate' ? 'Gerar com IA' : 'Modo de Edição'}
               </h3>
               <div className="w-2 h-2 rounded-full bg-indigo-500 animate-pulse"></div>
             </div>
@@ -1305,140 +1052,56 @@ export function Editor({ imageUrl, onNavigate, initialTool = 'background', userR
                   setActiveTool('background');
                   setViewMode('original');
                 }}
-                className={`flex flex-col items-center gap-1 py-2 px-1 text-[9px] font-bold rounded-xl transition-all ${
+                className={`flex flex-col items-center gap-1 py-1.5 px-1 text-[8px] md:text-[9px] font-bold rounded-xl transition-all ${
                   activeTool === 'background' 
                     ? 'bg-white dark:bg-slate-700 shadow-lg text-indigo-600' 
                     : 'text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'
                 }`}
               >
-                <ImageIcon size={14} />
+                <ImageIcon size={12} />
                 Remover Fundo
               </button>
               <button 
                 onClick={() => {
-                  setActiveTool('object');
+                  setActiveTool('ai_generate');
                   setViewMode('original');
                 }}
-                className={`flex flex-col items-center gap-1 py-2 px-1 text-[9px] font-bold rounded-xl transition-all ${
-                  activeTool === 'object' 
-                    ? 'bg-white dark:bg-slate-700 shadow-lg text-indigo-600' 
+                className={`flex flex-col items-center gap-1 py-1.5 px-1 text-[8px] md:text-[9px] font-bold rounded-xl transition-all ${
+                  activeTool === 'ai_generate' 
+                    ? 'bg-gradient-to-br from-indigo-500 to-purple-600 text-white shadow-lg' 
                     : 'text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'
                 }`}
               >
-                <Eraser size={14} />
-                Remover Objeto
+                <Sparkles size={12} className={activeTool === 'ai_generate' ? 'text-white' : 'text-indigo-500'} />
+                Gerar com IA
               </button>
               <button 
                 onClick={() => {
-                  setActiveTool('upscale');
+                  setActiveTool('templates');
                   setViewMode('original');
                 }}
-                className={`flex flex-col items-center gap-1 py-2 px-1 text-[9px] font-bold rounded-xl transition-all ${
-                  activeTool === 'upscale' 
-                    ? 'bg-white dark:bg-slate-700 shadow-lg text-indigo-600' 
+                className={`flex flex-col items-center gap-1 py-1.5 px-1 text-[8px] md:text-[9px] font-bold rounded-xl transition-all ${
+                  activeTool === 'templates' 
+                    ? 'bg-white dark:bg-slate-700 shadow-lg text-indigo-600 border border-indigo-500/20' 
                     : 'text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'
                 }`}
               >
-                <Sparkles size={14} />
-                Melhorar Qualidade
+                <Zap size={12} className="text-pink-500" />
+                Templates
               </button>
               <button 
                 onClick={() => {
-                  setActiveTool('face');
+                  setActiveTool('stock');
                   setViewMode('original');
                 }}
-                className={`flex flex-col items-center gap-1 py-2 px-1 text-[9px] font-bold rounded-xl transition-all ${
-                  activeTool === 'face' 
-                    ? 'bg-white dark:bg-slate-700 shadow-lg text-indigo-600' 
+                className={`flex flex-col items-center gap-1 py-1.5 px-1 text-[8px] md:text-[9px] font-bold rounded-xl transition-all ${
+                  activeTool === 'stock' 
+                    ? 'bg-blue-600 text-white shadow-lg' 
                     : 'text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'
                 }`}
               >
-                <User size={14} />
-                Retoque Facial
-              </button>
-              <button 
-                onClick={() => {
-                  setActiveTool('filters');
-                  setViewMode('original');
-                }}
-                className={`flex flex-col items-center gap-1 py-2 px-1 text-[9px] font-bold rounded-xl transition-all ${
-                  activeTool === 'filters' 
-                    ? 'bg-white dark:bg-slate-700 shadow-lg text-indigo-600' 
-                    : 'text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'
-                }`}
-              >
-                <Sliders size={14} />
-                Filtros
-              </button>
-              <button 
-                onClick={() => {
-                  setActiveTool('crop');
-                  setViewMode('original');
-                }}
-                className={`flex flex-col items-center gap-1 py-2 px-1 text-[9px] font-bold rounded-xl transition-all ${
-                  activeTool === 'crop' 
-                    ? 'bg-white dark:bg-slate-700 shadow-lg text-indigo-600' 
-                    : 'text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'
-                }`}
-              >
-                <Crop size={14} />
-                Recorte
-              </button>
-              <button 
-                onClick={() => {
-                  setActiveTool('layers');
-                  setViewMode('original');
-                }}
-                className={`flex flex-col items-center gap-1 py-2 px-1 text-[9px] font-bold rounded-xl transition-all ${
-                  activeTool === 'layers' 
-                    ? 'bg-white dark:bg-slate-700 shadow-lg text-indigo-600' 
-                    : 'text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'
-                }`}
-              >
-                <Layers size={14} />
-                Composição
-              </button>
-              <button 
-                onClick={() => {
-                  setActiveTool('magic');
-                  setViewMode('original');
-                }}
-                className={`flex flex-col items-center gap-1 py-2 px-1 text-[9px] font-bold rounded-xl transition-all ${
-                  activeTool === 'magic' 
-                    ? 'bg-white dark:bg-slate-700 shadow-lg text-indigo-600' 
-                    : 'text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'
-                }`}
-              >
-                <Wand2 size={14} />
-                Edição Mágica
-              </button>
-              <button 
-                onClick={() => {
-                  setActiveTool('outpaint');
-                  setViewMode('original');
-                }}
-                className={`flex flex-col items-center gap-1 py-2 px-1 text-[9px] font-bold rounded-xl transition-all ${
-                  activeTool === 'outpaint' 
-                    ? 'bg-white dark:bg-slate-700 shadow-lg text-indigo-600' 
-                    : 'text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'
-                }`}
-              >
-                <Maximize2 size={14} />
-                Expansão IA
-              </button>
-              <button 
-                onClick={() => {
-                  setActiveTool('variations');
-                  setViewMode('original');
-                }}
-                className={`flex flex-col items-center gap-1 py-2 px-1 text-[9px] font-bold rounded-xl transition-all ${
-                  activeTool === 'variations' 
-                    ? 'bg-white dark:bg-slate-700 shadow-lg text-indigo-600' 
-                    : 'text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'
-                }`}
-              >
-                <RefreshCw size={14} />
-                Variações
+                <Library size={12} />
+                Pexels
               </button>
             </div>
           </div>
@@ -1446,8 +1109,78 @@ export function Editor({ imageUrl, onNavigate, initialTool = 'background', userR
           <div>
             <h3 className="text-sm font-bold uppercase tracking-widest text-indigo-600 dark:text-indigo-400 mb-6">Recursos de Ajuste</h3>
             
-            {/* Brush Size (For Object and Background tools) */}
-            {(activeTool === 'object' || activeTool === 'background') && (
+            {/* AI Generation Settings */}
+            {activeTool === 'ai_generate' && (
+              <div className="space-y-6 mb-8 animate-in fade-in slide-in-from-top-1 duration-300">
+                <div className="space-y-3">
+                  <label className="text-sm font-bold text-slate-800 dark:text-slate-200 block">Comando (Prompt)</label>
+                  <div className="relative">
+                    <textarea
+                      value={aiPrompt}
+                      onChange={(e) => setAiPrompt(e.target.value)}
+                      placeholder="Ex: Um astronauta andando a cavalo na Lua, estilo cinematográfico..."
+                      className="w-full h-32 p-4 bg-white dark:bg-slate-800 border-2 border-slate-200 dark:border-slate-700 rounded-2xl text-sm focus:border-indigo-500 focus:ring-0 transition-all resize-none shadow-inner"
+                    />
+                    <button 
+                      onClick={() => {
+                        setIsProcessing(true);
+                        refinePromptOptions(aiPrompt).then(res => {
+                          setRefinementChoices(res);
+                          setShowRefinementModal(true);
+                          setIsProcessing(false);
+                        });
+                      }}
+                      className="absolute bottom-3 right-3 p-2 bg-indigo-50 dark:bg-indigo-900/30 text-indigo-600 dark:text-indigo-400 rounded-xl hover:bg-indigo-100 dark:hover:bg-indigo-900/50 transition-all"
+                      title="Refinar com IA"
+                    >
+                      <Wand2 size={16} />
+                    </button>
+                  </div>
+                </div>
+
+                <div className="space-y-3">
+                  <label className="text-sm font-bold text-slate-800 dark:text-slate-200 block">Proporção</label>
+                  <div className="flex gap-2 p-1 bg-slate-100 dark:bg-slate-800 rounded-xl">
+                    {(['1:1', '4:3', '16:9'] as const).map((ratio) => (
+                      <button 
+                        key={ratio}
+                        onClick={() => setAiAspectRatio(ratio)}
+                        className={`flex-1 py-2 text-xs font-bold rounded-lg transition-all ${
+                          aiAspectRatio === ratio 
+                            ? 'bg-white dark:bg-slate-700 shadow-sm text-indigo-600' 
+                            : 'text-slate-500 hover:text-slate-700'
+                        }`}
+                      >
+                        {ratio}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                <button 
+                  onClick={handleApplyChanges}
+                  disabled={isProcessing || !aiPrompt.trim()}
+                  className="w-full py-4 bg-gradient-to-r from-indigo-600 to-purple-600 text-white rounded-2xl font-bold flex items-center justify-center gap-2 hover:scale-[1.02] active:scale-[0.98] transition-all shadow-xl shadow-indigo-500/20 disabled:opacity-50 disabled:scale-100"
+                >
+                  {isProcessing ? <Loader2 size={20} className="animate-spin" /> : <Sparkles size={20} />}
+                  Gerar Imagem
+                </button>
+              </div>
+            )}
+
+            {/* Background tool info */}
+            {activeTool === 'background' && (
+              <div className="flex items-center justify-center gap-2 p-3 bg-indigo-50 dark:bg-indigo-950/30 rounded-2xl border border-indigo-100 dark:border-indigo-900/50 mb-6">
+                <Layers size={16} className="text-indigo-600" />
+                <div className="flex flex-col">
+                  <span className="text-[10px] font-black uppercase tracking-widest text-indigo-600 leading-none mb-1">Motor Ativo</span>
+                  <span className="text-[12px] font-bold text-slate-700 dark:text-slate-300 leading-none">Clipping Magic Pro</span>
+                </div>
+              </div>
+            )}
+
+            {/* Brush Size (For Background tool) */}
+            {activeTool === 'background' && (
               <div className="space-y-4 mb-8">
                 <div className="flex justify-between items-center">
                   <label className="text-sm font-semibold text-slate-900 dark:text-white">Tamanho do Pincel</label>
@@ -1473,275 +1206,138 @@ export function Editor({ imageUrl, onNavigate, initialTool = 'background', userR
               </div>
             )}
 
-            {/* Upscale Level (Only for Upscale tool) */}
-            {activeTool === 'upscale' && (
-              <div className="space-y-4 mb-8">
-                <div className="flex justify-between items-center">
-                  <label className="text-sm font-semibold text-slate-900 dark:text-white">Nível de Resolução</label>
-                  <span className="text-xs font-bold text-indigo-600 bg-indigo-50 dark:bg-indigo-900/30 px-2 py-0.5 rounded">{upscaleLevel}</span>
-                </div>
-                <div className="flex gap-2">
-                  {(['2K', '4K', '8K'] as const).map((level) => (
-                    <button 
-                      key={level}
-                      onClick={() => {
-                        if ((level === '4K' || level === '8K') && userRole !== 'pro' && userRole !== 'admin') {
-                          onOpenPricing?.();
-                          return;
-                        }
-                        setUpscaleLevel(level);
-                      }}
-                      className={`flex-1 py-2 text-[10px] font-bold rounded-lg transition-all relative ${
-                        upscaleLevel === level 
-                          ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-500/20' 
-                          : 'bg-slate-200 dark:bg-slate-800 text-slate-600 dark:text-slate-400'
-                      }`}
-                    >
-                      {level}
-                      {(level === '4K' || level === '8K') && userRole !== 'pro' && userRole !== 'admin' && (
-                        <Crown size={10} className="absolute top-1 right-1 text-yellow-500" />
-                      )}
-                    </button>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            {/* Magic Edit Selection (Only for Magic tool) */}
-            {activeTool === 'magic' && (
+            {/* DynaPictures Templates */}
+            {activeTool === 'templates' && (
               <div className="space-y-6 mb-8">
-                <div className="space-y-3">
-                  <div className="flex justify-between items-center">
-                    <label className="text-sm font-semibold text-slate-900 dark:text-white">Instrução Personalizada</label>
-                    <span className="text-[10px] font-bold text-indigo-600 bg-indigo-50 dark:bg-indigo-900/30 px-2 py-0.5 rounded uppercase">IA Generativa</span>
+                <div className="space-y-4">
+                  <div className="flex justify-between items-center px-1">
+                    <label className="text-sm font-semibold text-slate-900 dark:text-white uppercase tracking-tight">Modelos Dinâmicos</label>
                   </div>
-                  <textarea 
-                    value={magicInstruction}
-                    onChange={(e) => {
-                      setMagicInstruction(e.target.value);
-                      setSelectedMagicPreset(''); // Clear preset if user types
-                    }}
-                    placeholder="Ex: Mude o céu para um pôr do sol dramático ou transforme em uma pintura..."
-                    className="w-full p-4 rounded-2xl bg-slate-50 dark:bg-slate-800 border-2 border-transparent focus:border-indigo-500 focus:bg-white dark:focus:bg-slate-900 transition-all text-sm text-slate-700 dark:text-slate-200 min-h-[100px] resize-none outline-none"
-                  />
-                </div>
+                  
+                  {isFetchingDesigns ? (
+                    <div className="flex flex-col items-center justify-center py-10 gap-3 border-2 border-dashed border-slate-200 dark:border-slate-800 rounded-3xl">
+                      <Loader2 size={24} className="animate-spin text-indigo-600" />
+                      <span className="text-xs text-slate-400">Buscando seus designs...</span>
+                    </div>
+                  ) : availableDesigns.length > 0 ? (
+                    <div className="space-y-4">
+                      <div className="grid grid-cols-1 gap-3 max-h-[300px] overflow-y-auto pr-2 custom-scrollbar">
+                        {availableDesigns.map((design) => (
+                          <button
+                            key={design.id}
+                            onClick={() => setSelectedDesignId(design.id)}
+                            className={`flex items-center gap-3 p-3 rounded-2xl border-2 transition-all text-left ${
+                              selectedDesignId === design.id 
+                                ? 'bg-indigo-50 dark:bg-indigo-900/20 border-indigo-500 text-indigo-600' 
+                                : 'bg-white dark:bg-slate-800 border-transparent text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-700'
+                            }`}
+                          >
+                            <div className="w-12 h-12 rounded-lg bg-slate-100 dark:bg-slate-700 overflow-hidden">
+                              <img src={design.thumbnail_url || 'https://picsum.photos/seed/template/50/50'} className="w-full h-full object-cover" />
+                            </div>
+                            <div className="flex-1 min-w-0">
+                              <div className="text-[11px] font-bold truncate">{design.name || 'Sem nome'}</div>
+                              <div className="text-[9px] opacity-70">ID: {design.id}</div>
+                            </div>
+                          </button>
+                        ))}
+                      </div>
 
-                <div className="space-y-3">
-                  <label className="text-sm font-semibold text-slate-900 dark:text-white">Sugestões Rápidas</label>
-                  <div className="grid grid-cols-2 gap-2">
-                    {magicPresets.map((p) => (
-                      <button 
-                        key={p.id}
-                        onClick={() => {
-                          setSelectedMagicPreset(p.id);
-                          setMagicInstruction(''); // Clear custom if preset selected
-                        }}
-                        className={`flex flex-col items-start p-3 rounded-2xl border-2 transition-all active:scale-95 ${
-                          selectedMagicPreset === p.id 
-                            ? 'bg-indigo-50 dark:bg-indigo-900/20 border-indigo-500 text-indigo-600 shadow-lg shadow-indigo-500/10' 
-                            : 'bg-white dark:bg-slate-800 border-transparent text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-700'
-                        }`}
+                      {/* Manual Design ID Input as fallback */}
+                      <div className="pt-2 border-t border-slate-100 dark:border-slate-800"></div>
+                      <div className="space-y-2">
+                        <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest px-1">Ou insira o ID manualmente</label>
+                        <input 
+                          type="text"
+                          value={selectedDesignId}
+                          onChange={(e) => setSelectedDesignId(e.target.value)}
+                          placeholder="ID do Design no DynaPictures"
+                          className="w-full px-4 py-3 rounded-xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-sm focus:ring-2 focus:ring-indigo-500 focus:outline-none"
+                        />
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="flex flex-col items-center text-center p-6 bg-amber-50 dark:bg-amber-900/10 border border-amber-200 dark:border-amber-800/50 rounded-2xl gap-3">
+                      <AlertCircle className="text-amber-500" />
+                      <p className="text-[10px] text-amber-700 dark:text-amber-400 leading-relaxed font-bold">
+                        Não encontramos designs na sua conta. Crie um template no painel do DynaPictures e ele aparecerá aqui.
+                      </p>
+                      <a 
+                        href="https://dynapictures.com/dashboard/designs" 
+                        target="_blank" 
+                        rel="noreferrer"
+                        className="text-[10px] px-4 py-2 bg-amber-600 text-white rounded-lg hover:bg-amber-700 transition-all font-black"
                       >
-                        <div className="w-full h-8 rounded-lg mb-2 bg-indigo-100 dark:bg-indigo-900/40 flex items-center justify-center text-indigo-600 dark:text-indigo-400">
-                          <Wand2 size={16} />
-                        </div>
-                        <span className="text-[10px] font-black uppercase tracking-wider">{p.name}</span>
-                        <span className="text-[8px] font-bold opacity-60 uppercase truncate w-full">{p.desc}</span>
-                      </button>
-                    ))}
-                  </div>
+                        Ir para o Painel
+                      </a>
+                    </div>
+                  )}
+                </div>
+
+                <div className="bg-pink-50 dark:bg-pink-900/10 p-4 rounded-2xl border border-pink-100 dark:border-pink-800/50">
+                  <h5 className="text-[10px] font-black uppercase text-pink-600 mb-2">Automação Criativa</h5>
+                  <p className="text-[10px] text-pink-700/70 dark:text-pink-400/70 leading-relaxed">
+                    Transforme seus templates do DynaPictures em imagens reais com dados variáveis instantaneamente.
+                  </p>
                 </div>
               </div>
             )}
 
-            {/* Crop Selection (Only for Crop tool) */}
-            {activeTool === 'crop' && (
-              <div className="space-y-4 mb-8">
-                <div className="flex justify-between items-center">
-                  <div className="space-y-1">
-                    <label className="text-sm font-semibold text-slate-900 dark:text-white">Proporção de Recorte</label>
-                    <p className="text-[10px] text-slate-500 dark:text-slate-400">Escolha o formato ideal</p>
-                  </div>
-                  <span className="text-xs font-bold text-amber-600 bg-amber-50 dark:bg-amber-900/30 px-2 py-0.5 rounded uppercase">
-                    {cropPresets.find(p => p.id === selectedCrop)?.name}
-                  </span>
-                </div>
-                <div className="grid grid-cols-2 gap-2">
-                  {cropPresets.map((p) => (
-                    <button 
-                      key={p.id}
-                      onClick={() => setSelectedCrop(p.id)}
-                      className={`flex flex-col items-start p-3 rounded-2xl border-2 transition-all active:scale-95 ${
-                        selectedCrop === p.id 
-                          ? 'bg-amber-50 dark:bg-amber-900/20 border-amber-500 text-amber-600 shadow-lg shadow-amber-500/10' 
-                          : 'bg-white dark:bg-slate-800 border-transparent text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-700'
-                      }`}
-                    >
-                      <div className={`w-full h-10 rounded-xl mb-2 bg-slate-100 dark:bg-slate-700 flex items-center justify-center ${selectedCrop === p.id ? 'text-amber-500' : 'text-slate-400'}`}>
-                        {p.icon}
-                      </div>
-                      <span className="text-[10px] font-black uppercase tracking-wider">{p.name}</span>
-                      <span className="text-[8px] font-bold opacity-60 uppercase truncate w-full">{p.desc}</span>
-                    </button>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            {/* Face Retouch Selection (Only for Face tool) */}
-            {activeTool === 'face' && (
-              <div className="space-y-4 mb-8">
-                <div className="flex justify-between items-center">
-                  <div className="space-y-1">
-                    <label className="text-sm font-semibold text-slate-900 dark:text-white">Estilo de Retoque</label>
-                    <p className="text-[10px] text-slate-500 dark:text-slate-400">Embeleze rostos com IA</p>
-                  </div>
-                  <span className="text-xs font-bold text-pink-600 bg-pink-50 dark:bg-pink-900/30 px-2 py-0.5 rounded uppercase">
-                    {facePresets.find(p => p.id === selectedFacePreset)?.name}
-                  </span>
-                </div>
-                <div className="grid grid-cols-2 gap-2">
-                  {facePresets.map((p) => (
-                    <button 
-                      key={p.id}
-                      onClick={() => setSelectedFacePreset(p.id)}
-                      className={`flex flex-col items-start p-3 rounded-2xl border-2 transition-all active:scale-95 ${
-                        selectedFacePreset === p.id 
-                          ? 'bg-pink-50 dark:bg-pink-900/20 border-pink-500 text-pink-600 shadow-lg shadow-pink-500/10' 
-                          : 'bg-white dark:bg-slate-800 border-transparent text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-700'
-                      }`}
-                    >
-                      <div className={`w-full h-10 rounded-xl mb-2 ${p.color} opacity-80 flex items-center justify-center text-white`}>
-                        {p.icon}
-                      </div>
-                      <span className="text-[10px] font-black uppercase tracking-wider">{p.name}</span>
-                      <span className="text-[8px] font-bold opacity-60 uppercase truncate w-full">{p.desc}</span>
-                    </button>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            {/* Filter Selection (Only for Filters tool) */}
-            {activeTool === 'filters' && (
-              <div className="space-y-4 mb-8">
-                <div className="flex justify-between items-center">
-                  <div className="space-y-1">
-                    <label className="text-sm font-semibold text-slate-900 dark:text-white">Escolha o Filtro</label>
-                    <p className="text-[10px] text-slate-500 dark:text-slate-400">Aplique estilos artísticos instantâneos</p>
-                  </div>
-                  <span className="text-xs font-bold text-indigo-600 bg-indigo-50 dark:bg-indigo-900/30 px-2 py-0.5 rounded uppercase">
-                    {filters.find(f => f.id === selectedFilter)?.name}
-                  </span>
-                </div>
-                <div className="flex justify-end">
-                  <button 
-                    onClick={() => {
-                      setSelectedFilter('vibrante');
-                      setSensitivity(75);
+            {/* Pexels Stock Browser */}
+            {activeTool === 'stock' && (
+              <div className="h-[500px] mb-8">
+                {pexelsKey ? (
+                  <PexelsBrowser 
+                    apiKey={pexelsKey} 
+                    onSelectImage={(url) => {
+                      if (window.confirm('Deseja carregar esta imagem do Pexels como base para o editor? Suas alterações não salvas serão perdidas.')) {
+                        onNavigate?.('editor', url);
+                        setActiveTool('background');
+                      }
                     }}
-                    className="text-[10px] font-bold text-slate-400 hover:text-indigo-600 transition-colors flex items-center gap-1"
-                  >
-                    <RotateCcw size={10} />
-                    Resetar Filtro
-                  </button>
-                </div>
-                <div className="grid grid-cols-2 gap-2">
-                  {filters.map((f) => (
-                    <button 
-                      key={f.id}
-                      onClick={() => setSelectedFilter(f.id)}
-                      className={`flex flex-col items-start p-3 rounded-2xl border-2 transition-all active:scale-95 ${
-                        selectedFilter === f.id 
-                          ? 'bg-indigo-50 dark:bg-indigo-900/20 border-indigo-500 text-indigo-600 shadow-lg shadow-indigo-500/10' 
-                          : 'bg-white dark:bg-slate-800 border-transparent text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-700'
-                      }`}
-                    >
-                      <div className={`w-full h-10 rounded-xl mb-2 ${f.color} opacity-80 flex items-center justify-center text-white`}>
-                        {f.icon}
-                      </div>
-                      <span className="text-[10px] font-black uppercase tracking-wider">{f.name}</span>
-                      <span className="text-[8px] font-bold opacity-60 uppercase truncate w-full">{f.desc}</span>
-                    </button>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            {/* Composition Selection (Only for Layers tool) */}
-            {activeTool === 'layers' && (
-              <div className="space-y-4 mb-8">
-                <div className="flex justify-between items-center">
-                  <div className="space-y-1">
-                    <label className="text-sm font-semibold text-slate-900 dark:text-white">Estilo de Composição</label>
-                    <p className="text-[10px] text-slate-500 dark:text-slate-400">Re-enquadre sua foto com IA</p>
+                  />
+                ) : (
+                  <div className="flex flex-col items-center text-center p-6 bg-blue-50 dark:bg-blue-900/10 border border-blue-200 dark:border-blue-800/50 rounded-2xl gap-3">
+                    <ImageIcon className="text-blue-500" />
+                    <p className="text-[10px] text-blue-700 dark:text-blue-400 leading-relaxed font-bold">
+                      A chave do Pexels não foi configurada. Vá em configurações para ativar o banco de imagens.
+                    </p>
                   </div>
-                  <span className="text-xs font-bold text-indigo-600 bg-indigo-50 dark:bg-indigo-900/30 px-2 py-0.5 rounded uppercase">
-                    {compositionPresets.find(p => p.id === selectedComposition)?.name}
-                  </span>
-                </div>
-                <div className="flex justify-end">
-                  <button 
-                    onClick={() => {
-                      setSelectedComposition('thirds');
-                      setSensitivity(75);
-                    }}
-                    className="text-[10px] font-bold text-slate-400 hover:text-indigo-600 transition-colors flex items-center gap-1"
-                  >
-                    <RotateCcw size={10} />
-                    Resetar Layout
-                  </button>
-                </div>
-                <div className="grid grid-cols-2 gap-2">
-                  {compositionPresets.map((p) => (
-                    <button 
-                      key={p.id}
-                      onClick={() => setSelectedComposition(p.id)}
-                      className={`flex flex-col items-start p-3 rounded-2xl border-2 transition-all active:scale-95 ${
-                        selectedComposition === p.id 
-                          ? 'bg-indigo-50 dark:bg-indigo-900/20 border-indigo-500 text-indigo-600 shadow-lg shadow-indigo-500/10' 
-                          : 'bg-white dark:bg-slate-800 border-transparent text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-700'
-                      }`}
-                    >
-                      <div className={`w-full h-10 rounded-xl mb-2 ${p.color} opacity-80 flex items-center justify-center text-white`}>
-                        {p.icon}
-                      </div>
-                      <span className="text-[10px] font-black uppercase tracking-wider">{p.name}</span>
-                      <span className="text-[8px] font-bold opacity-60 uppercase truncate w-full">{p.desc}</span>
-                    </button>
-                  ))}
-                </div>
+                )}
               </div>
             )}
 
-            {/* Sensitivity / Quality Slider */}
+            {/* DynaPictures Templates */}
+
+            {/* DynaPictures Templates */}
+
+            {/* Stock Browser */}
+
+
+      {/* Tool Selection Section (from sidebar) */}
+      {/* Remove magic, outpaint, variations, filters, layers, crop sections */}
+
+            {/* Sensitivity Slider */}
             <div className="space-y-4">
               <div className="flex justify-between items-center">
-                <label className="text-sm font-semibold text-slate-900 dark:text-white">
-                  {activeTool === 'upscale' ? 'Intensidade de Melhoria' : 
-                   activeTool === 'filters' ? 'Intensidade do Filtro' : 
-                   activeTool === 'layers' ? 'Intensidade do Ajuste' : 'Sensibilidade'}
-                </label>
+                <label className="text-sm font-semibold text-slate-900 dark:text-white">Sensibilidade</label>
                 <span className="text-xs font-bold text-indigo-600 bg-indigo-50 dark:bg-indigo-900/30 px-2 py-0.5 rounded">
-                  {activeTool === 'upscale' ? quality : sensitivity}%
+                  {sensitivity}%
                 </span>
               </div>
               <input 
                 type="range" 
                 min="1" 
                 max="100" 
-                value={activeTool === 'upscale' ? quality : sensitivity}
-                onChange={(e) => {
-                  if (activeTool === 'upscale') setQuality(parseInt(e.target.value));
-                  else setSensitivity(parseInt(e.target.value));
-                }}
+                value={sensitivity}
+                onChange={(e) => setSensitivity(parseInt(e.target.value))}
                 className="w-full h-1.5 bg-slate-200 dark:bg-slate-800 rounded-full appearance-none cursor-pointer accent-indigo-600"
               />
             </div>
           </div>
 
-          {/* Refinement (Only for Background and Upscale tools) */}
-          {(activeTool === 'background' || activeTool === 'upscale') && (
+          {/* Refinement (Only for Background tool) */}
+          {activeTool === 'background' && (
             <div className="space-y-4 mt-8">
               <div className="flex justify-between items-center">
                 <label className="text-sm font-semibold text-slate-900 dark:text-white">Refinamento</label>
@@ -1793,8 +1389,30 @@ export function Editor({ imageUrl, onNavigate, initialTool = 'background', userR
             </div>
           )}
 
-          {/* Mode Toggles (For Object and Background tools) */}
-          {(activeTool === 'object' || activeTool === 'background') && (
+          {/* Background Engine (Only for Background tool) */}
+          {activeTool === 'background' && (
+            <div className="space-y-4 mb-6">
+              <label className="text-xs font-black text-slate-500 uppercase tracking-widest">Motor de IA</label>
+              <div className="grid grid-cols-2 gap-2 p-1 bg-slate-100 dark:bg-slate-800/50 rounded-2xl">
+                {(['clippingmagic', 'iloveimg'] as const).map((eng) => (
+                  <button
+                    key={eng}
+                    onClick={() => setBgEngine(eng)}
+                    className={`py-2 text-[10px] font-black uppercase tracking-tighter rounded-xl transition-all ${
+                      bgEngine === eng
+                        ? 'bg-white dark:bg-slate-700 shadow-sm text-indigo-600'
+                        : 'text-slate-400 hover:text-slate-600 dark:hover:text-slate-300'
+                    }`}
+                  >
+                    {eng === 'clippingmagic' ? 'Clipping Magic' : 'iLoveIMG'}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Mode Toggles (For Background tool) */}
+          {activeTool === 'background' && (
             <div className="grid grid-cols-3 gap-2 mb-6 p-1 bg-slate-100 dark:bg-slate-800/50 rounded-[2rem]">
               <button 
                 onClick={() => setMode('erase')}
@@ -1880,6 +1498,62 @@ export function Editor({ imageUrl, onNavigate, initialTool = 'background', userR
           </div>
         </div>
       </aside>
+
+      <AnimatePresence>
+        {showRefinementModal && (
+          <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setShowRefinementModal(false)}
+              className="absolute inset-0 bg-slate-950/80 backdrop-blur-sm"
+            />
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95, y: 20 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 20 }}
+              className="relative w-full max-w-2xl bg-white dark:bg-slate-900 rounded-[2rem] shadow-2xl border border-slate-200 dark:border-slate-800 p-8 flex flex-col gap-6"
+            >
+              <div className="flex justify-between items-center">
+                <div className="flex items-center gap-3">
+                  <div className="p-2 bg-indigo-100 dark:bg-indigo-900/40 text-indigo-600 rounded-xl">
+                    <Wand2 size={20} />
+                  </div>
+                  <h3 className="text-xl font-black text-slate-900 dark:text-white">Escolha o melhor Refinamento</h3>
+                </div>
+                <button 
+                  onClick={() => setShowRefinementModal(false)}
+                  className="p-2 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-full text-slate-500 transition-colors"
+                >
+                  <X size={20} />
+                </button>
+              </div>
+
+              <div className="space-y-4">
+                {refinementChoices.map((choice, idx) => (
+                  <motion.button
+                    key={idx}
+                    whileHover={{ scale: 1.01, x: 5 }}
+                    whileTap={{ scale: 0.99 }}
+                    onClick={() => {
+                      setAiPrompt(choice);
+                      setShowRefinementModal(false);
+                    }}
+                    className="w-full p-6 text-left bg-slate-50 dark:bg-slate-800/50 hover:bg-indigo-50 dark:hover:bg-indigo-900/20 border border-slate-200 dark:border-slate-800 hover:border-indigo-200 dark:hover:border-indigo-800 rounded-2xl transition-all group"
+                  >
+                    <div className="flex items-center gap-3 mb-2">
+                       <span className="px-2 py-0.5 bg-indigo-600 text-[10px] font-black text-white rounded uppercase tracking-tighter">Opção {idx + 1}</span>
+                    </div>
+                    <p className="text-sm text-slate-700 dark:text-slate-300 leading-relaxed font-medium">{choice}</p>
+                  </motion.button>
+                ))}
+              </div>
+              <p className="text-[10px] text-slate-500 text-center uppercase tracking-widest font-bold">Gerado pelo Google Gemini</p>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }

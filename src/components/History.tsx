@@ -9,11 +9,10 @@ import { AdUnit } from './AdUnit';
 interface HistoryProps {
   onNavigate: (screen: Screen, imageData?: string) => void;
   userRole?: string;
-  onOpenPricing?: () => void;
   monetization?: MonetizationSettings | null;
 }
 
-export function History({ onNavigate, userRole, onOpenPricing, monetization }: HistoryProps) {
+export function History({ onNavigate, userRole, monetization }: HistoryProps) {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [projects, setProjects] = useState<Project[]>([]);
@@ -34,15 +33,10 @@ export function History({ onNavigate, userRole, onOpenPricing, monetization }: H
     );
 
     const unsubscribe = onSnapshot(q, (snapshot) => {
-      let fetchedProjects = snapshot.docs.map(doc => ({
+      const fetchedProjects = snapshot.docs.map(doc => ({
         ...doc.data(),
         id: doc.id
       })) as Project[];
-
-      // Limit for free users
-      if (userRole !== 'pro' && userRole !== 'admin') {
-        fetchedProjects = fetchedProjects.slice(0, 10);
-      }
 
       setProjects(fetchedProjects);
     }, (error) => {

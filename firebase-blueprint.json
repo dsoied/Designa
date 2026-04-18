@@ -25,7 +25,8 @@
         "date": { "type": "string", "format": "date-time", "description": "Creation date" },
         "status": { "type": "string", "enum": ["Finalizado", "Em Nuvem"], "description": "Project status" },
         "type": { "type": "string", "description": "Type of edit performed" },
-        "imageUrl": { "type": "string", "format": "uri", "description": "URL of the processed image" }
+        "imageUrl": { "type": "string", "format": "uri", "description": "URL of the processed image" },
+        "prompt": { "type": "string", "description": "AI prompt used if applicable" }
       },
       "required": ["id", "uid", "name", "date", "status", "type", "imageUrl"]
     },
@@ -132,6 +133,19 @@
         "timestamp": { "type": "string", "format": "date-time", "description": "Event timestamp" }
       },
       "required": ["type", "userId", "email", "timestamp"]
+    },
+    "AIConfig": {
+      "title": "AI Service Credentials",
+      "description": "API keys and configuration for specialized AI services",
+      "type": "object",
+      "properties": {
+        "youcamKey": { "type": "string", "description": "YouCam AI API key" },
+        "clippingMagicKey": { "type": "string", "description": "Clipping Magic API key" },
+        "neroKey": { "type": "string", "description": "Nero AI API key" },
+        "dynaPicturesKey": { "type": "string", "description": "DynaPictures API key" },
+        "pollinationsKey": { "type": "string", "description": "Pollinations AI API key" },
+        "pexelsKey": { "type": "string", "description": "Pexels API key" }
+      }
     }
   },
   "firestore": {
@@ -162,6 +176,10 @@
     "/config/footer": {
       "schema": "FooterSettings",
       "description": "Stores global footer settings"
+    },
+    "/config/ai": {
+      "schema": "AIConfig",
+      "description": "Stores credentials for specialized AI services"
     },
     "/newsletter/{email}": {
       "schema": "NewsletterSubscription",

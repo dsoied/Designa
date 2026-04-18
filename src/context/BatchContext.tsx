@@ -1,5 +1,4 @@
 import React, { createContext, useContext, useState, useCallback, useEffect } from 'react';
-import { GoogleGenAI } from "@google/genai";
 import { db, auth, addDoc, collection, serverTimestamp, uploadImageToStorage } from '../firebase';
 import { usageService } from '../services/usageService';
 import JSZip from 'jszip';
@@ -17,8 +16,8 @@ export interface BatchFile {
 interface BatchContextType {
   files: BatchFile[];
   isProcessing: boolean;
-  activeTool: 'background' | 'filters' | 'upscale';
-  setActiveTool: (tool: 'background' | 'filters' | 'upscale') => void;
+  activeTool: 'background' | 'upscale';
+  setActiveTool: (tool: 'background' | 'upscale') => void;
   addFiles: (newFiles: File[]) => void;
   removeFile: (id: string) => void;
   clearFiles: () => void;
@@ -30,7 +29,7 @@ const BatchContext = createContext<BatchContextType | undefined>(undefined);
 
 export function BatchProvider({ children }: { children: React.ReactNode }) {
   const [files, setFiles] = useState<BatchFile[]>([]);
-  const [activeTool, setActiveTool] = useState<'background' | 'filters' | 'upscale'>('background');
+  const [activeTool, setActiveTool] = useState<'background' | 'upscale'>('background');
   const [isProcessing, setIsProcessing] = useState(false);
 
   const addFiles = useCallback((newFiles: File[]) => {
@@ -69,36 +68,39 @@ export function BatchProvider({ children }: { children: React.ReactNode }) {
       });
 
       const base64Data = await base64Promise;
-      const apiKey = import.meta.env.VITE_GEMINI_API_KEY || '';
-      const ai = new GoogleGenAI({ apiKey });
       
-      let prompt = "";
+      let resultUrl = '';
+      
       if (tool === 'background') {
-        prompt = "Act as an expert AI image segmentation engine. Your goal is to perform a high-precision background removal. Detect the primary subject and isolate it perfectly. Output ONLY the resulting image as a base64-encoded PNG with transparency (alpha channel). The background must be completely transparent. Do not provide any text, markdown, or conversational response. Just the image data.";
-      } else if (tool === 'filters') {
-        prompt = "Act as an expert AI image filtering engine. Your goal is to apply a vibrant artistic filter to this photograph. Enhance colors, mood, and overall aesthetic. Output ONLY the resulting image as a base64-encoded PNG. Do not provide any text, markdown, or conversational response. Just the image data.";
-      } else {
-        prompt = "Act as an expert AI image enhancement engine. Your goal is to upscale this image to high resolution while preserving and enhancing details. Output ONLY the resulting image as a base64-encoded PNG. Do not provide any text, markdown, or conversational response. Just the image data.";
+        const response = await fetch('/api/remove-background', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ image: base64Data }),
+        });
+        if (!response.ok) throw new Error('Falha na remoção de fundo');
+        const data = await response.json();
+        resultUrl = data.image;
+      } else if (tool === 'upscale') {
+        // Prepare image for YouCam
+        const fileName = `batch_upscale_${Date.now()}.png`;
+        const tempUrl = await uploadImageToStorage(base64Data, fileName, `temp/${auth.currentUser?.uid}`);
+        
+        const response = await fetch('/api/youcam/upscale', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            params: {
+              image_url: tempUrl,
+              scale_factor: 4
+            }
+          })
+        });
+        if (!response.ok) throw new Error('Falha no Upscale YouCam');
+        const data = await response.json();
+        resultUrl = data.result_url || data.image_url || data.image;
       }
 
-      const response = await ai.models.generateContent({
-        model: "gemini-2.5-flash-image",
-        contents: {
-          parts: [
-            { text: prompt },
-            { inlineData: { data: base64Data.split(',')[1], mimeType: batchFile.file.type } }
-          ]
-        },
-        config: {
-          candidateCount: 1
-        }
-      });
-
-      const resultPart = response.candidates?.[0]?.content?.parts?.find(p => p.inlineData);
-      if (!resultPart?.inlineData?.data) throw new Error('IA não retornou imagem');
-
-      const resultBase64 = resultPart.inlineData.data;
-      const resultUrl = `data:image/png;base64,${resultBase64}`;
+      if (!resultUrl) throw new Error('IA não retornou imagem');
       
       setFiles(prev => prev.map(f => f.id === batchFile.id ? { ...f, progress: 70 } : f));
 

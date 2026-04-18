@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { CloudUpload, ArrowRight, ChevronRight, Layers, Eraser, Sparkles, ExternalLink, Plus, Crown, Zap, DollarSign } from 'lucide-react';
+import { CloudUpload, ArrowRight, ChevronRight, Layers, Eraser, Sparkles, ExternalLink, Plus, Crown, Zap, DollarSign, Wand2, Maximize2, RefreshCw, Library } from 'lucide-react';
 import { motion } from 'motion/react';
 import { db, auth, collection, query, where, orderBy, onSnapshot, limit, getDoc, doc, handleFirestoreError, OperationType } from '../firebase';
 import { Project, MonetizationSettings, FooterSettings, AppConfig } from '../types';
@@ -13,14 +13,13 @@ interface HomeProps {
   onNavigate: (screen: any, imageData?: string) => void;
   selectedImage: string | null;
   userRole?: string;
-  onOpenPricing: () => void;
   appConfig?: AppConfig;
   monetization?: MonetizationSettings | null;
   footerSettings?: FooterSettings | null;
   notify?: (title: string, message: string, type?: 'success' | 'error' | 'info') => void;
 }
 
-export function Home({ onNavigate, selectedImage, userRole, onOpenPricing, appConfig, monetization, footerSettings, notify }: HomeProps) {
+export function Home({ onNavigate, selectedImage, userRole, appConfig, monetization, footerSettings, notify }: HomeProps) {
   const { t } = useLanguage();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [isDragging, setIsDragging] = useState(false);
@@ -88,24 +87,14 @@ export function Home({ onNavigate, selectedImage, userRole, onOpenPricing, appCo
       return;
     }
 
-    // Free user limit: 10MB, Pro/Admin: 20MB
-    const limit = (userRole === 'pro' || userRole === 'admin') ? 20 * 1024 * 1024 : 10 * 1024 * 1024;
+    // Standard limit: 20MB for everyone now
+    const limit = 20 * 1024 * 1024;
     if (file.size > limit) {
-      if (userRole !== 'pro' && userRole !== 'admin') {
-        const msg = 'O arquivo é muito grande para o plano gratuito (limite 10MB). Faça upgrade para Pro para enviar arquivos de até 20MB.';
-        if (notify) {
-          notify('Limite Excedido', msg, 'error');
-        } else {
-          alert(msg);
-        }
-        onOpenPricing();
+      const msg = 'O arquivo excede o limite de 20MB.';
+      if (notify) {
+        notify('Erro de Tamanho', msg, 'error');
       } else {
-        const msg = 'O arquivo excede o limite de 20MB.';
-        if (notify) {
-          notify('Erro de Tamanho', msg, 'error');
-        } else {
-          alert(msg);
-        }
+        alert(msg);
       }
       return;
     }
@@ -206,37 +195,6 @@ export function Home({ onNavigate, selectedImage, userRole, onOpenPricing, appCo
 
   return (
     <div className="max-w-6xl mx-auto space-y-16 py-12 px-6 md:px-12">
-      {/* Pro Banner */}
-      {userRole !== 'pro' && userRole !== 'admin' && (
-        <motion.section 
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          className="relative overflow-hidden rounded-3xl bg-indigo-600 p-8 sm:p-12 text-white shadow-2xl shadow-indigo-500/20"
-        >
-          <div className="absolute top-0 right-0 -translate-y-1/4 translate-x-1/4 w-64 h-64 bg-white/10 rounded-full blur-3xl" />
-          <div className="absolute bottom-0 left-0 translate-y-1/4 -translate-x-1/4 w-64 h-64 bg-indigo-400/20 rounded-full blur-3xl" />
-          
-          <div className="relative z-10 flex flex-col md:flex-row items-center justify-between gap-8">
-            <div className="space-y-4 text-center md:text-left">
-              <div className="inline-flex items-center gap-2 px-3 py-1 bg-white/20 backdrop-blur-md rounded-full text-[10px] font-black uppercase tracking-widest">
-                <Sparkles size={12} className="text-yellow-400" />
-                Oferta Limitada
-              </div>
-              <h3 className="text-3xl sm:text-4xl font-black tracking-tight">Seja Pro por apenas $3 por 7 meses</h3>
-              <p className="text-indigo-100 max-w-xl font-medium">Desbloqueie processamento ilimitado, upscale em 4K e todos os recursos premium de IA sem limites de cota.</p>
-            </div>
-            <motion.button
-              whileHover={{ scale: 1.05, backgroundColor: "rgba(255, 255, 255, 1)" }}
-              whileTap={{ scale: 0.95 }}
-              onClick={onOpenPricing}
-              className="px-8 py-4 bg-white text-indigo-600 rounded-2xl font-black uppercase tracking-widest shadow-xl shadow-black/10 flex items-center gap-3 transition-all"
-            >
-              Assinar Agora <ArrowRight size={20} />
-            </motion.button>
-          </div>
-        </motion.section>
-      )}
-
       {/* Hero Section */}
       <section className="flex flex-col md:flex-row items-center justify-between gap-12">
         <motion.div 
@@ -381,20 +339,6 @@ export function Home({ onNavigate, selectedImage, userRole, onOpenPricing, appCo
             <h3 className="font-headline text-3xl font-extrabold text-slate-900 dark:text-white">O que vamos criar hoje?</h3>
           </div>
           <div className="flex items-center gap-6">
-            {(userRole !== 'pro' && userRole !== 'admin') && (
-              <div className="hidden sm:flex items-center gap-3 px-4 py-2 bg-slate-50 dark:bg-slate-800/50 rounded-xl border border-slate-100 dark:border-slate-800">
-                <Zap size={14} className="text-indigo-600" />
-                <div className="flex flex-col">
-                  <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest leading-none mb-1">Cota IA</span>
-                  <div className="flex items-center gap-2">
-                    <div className="w-16 h-1 bg-slate-200 dark:bg-slate-700 rounded-full overflow-hidden">
-                      <div className="h-full bg-indigo-600" style={{ width: `${((usage?.dailyCount || 0) / 5) * 100}%` }} />
-                    </div>
-                    <span className="text-[10px] font-bold text-slate-900 dark:text-white">{usage?.dailyCount || 0}/5</span>
-                  </div>
-                </div>
-              </div>
-            )}
             <button 
               onClick={() => onNavigate('tools')}
               className="text-sm font-bold text-indigo-600 flex items-center gap-2 hover:underline"
@@ -423,10 +367,10 @@ export function Home({ onNavigate, selectedImage, userRole, onOpenPricing, appCo
           >
             <ToolCard 
               icon={Sparkles} 
-              title="Texto para Imagem" 
-              description="Crie imagens incríveis do zero apenas com descrições em texto."
-              onClick={() => onNavigate('generate')}
-              tag="Novo"
+              title="Gerar com IA" 
+              description="Crie imagens incríveis do zero usando o novo Flash 2.5 da Google."
+              onClick={() => onNavigate('editor')}
+              tag="2.5 Flash"
             />
           </motion.div>
           <motion.div
@@ -438,8 +382,9 @@ export function Home({ onNavigate, selectedImage, userRole, onOpenPricing, appCo
             <ToolCard 
               icon={Layers} 
               title="Remover Fundo" 
-              description="Remova fundos complexos instantaneamente com precisão de IA."
+              description="Remova fundos complexos instantaneamente com precisão cirúrgica."
               onClick={() => handleToolClick('editor')}
+              tag="Destaque"
             />
           </motion.div>
           <motion.div
@@ -449,10 +394,10 @@ export function Home({ onNavigate, selectedImage, userRole, onOpenPricing, appCo
             transition={{ delay: 0.3 }}
           >
             <ToolCard 
-              icon={Eraser} 
-              title="Remover Objeto" 
-              description="Elimine distrações ou objetos indesejados de qualquer fotografia."
-              onClick={() => handleToolClick('objects')}
+              icon={Zap} 
+              title="Design Templates" 
+              description="Transforme suas fotos em designs profissionais para redes sociais."
+              onClick={() => handleToolClick('editor')}
             />
           </motion.div>
           <motion.div
@@ -462,11 +407,65 @@ export function Home({ onNavigate, selectedImage, userRole, onOpenPricing, appCo
             transition={{ delay: 0.4 }}
           >
             <ToolCard 
+              icon={Library} 
+              title="Banco Pexels" 
+              description="Acesse milhões de fotos de alta qualidade para seus projetos."
+              onClick={() => handleToolClick('editor')}
+            />
+          </motion.div>
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            whileInView={{ opacity: 1, y: 0 }}
+            viewport={{ once: true }}
+            transition={{ delay: 0.5 }}
+          >
+            <ToolCard 
               icon={Layers} 
               title="Processamento Lote" 
-              description="Processe dezenas de imagens simultaneamente com IA (Exclusivo Pro)."
+              description="Processe dezenas de imagens simultaneamente com IA."
               onClick={() => onNavigate('batch')}
-              isPro={true}
+            />
+          </motion.div>
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            whileInView={{ opacity: 1, y: 0 }}
+            viewport={{ once: true }}
+            transition={{ delay: 0.1 }}
+          >
+            <ToolCard 
+              icon={Wand2} 
+              title="Efeitos Inteligentes" 
+              description="Aplique filtros e melhorias automáticas baseadas em IA."
+              onClick={() => onNavigate('editor')}
+            />
+          </motion.div>
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            whileInView={{ opacity: 1, y: 0 }}
+            viewport={{ once: true }}
+            transition={{ delay: 0.2 }}
+          >
+            <ToolCard 
+              icon={Maximize2} 
+              title="Recorte Profissional" 
+              description="Ajuste suas imagens para qualquer formato de rede social."
+              onClick={() => onNavigate('editor')}
+            />
+          </motion.div>
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            whileInView={{ opacity: 1, y: 0 }}
+            viewport={{ once: true }}
+            transition={{ delay: 0.3 }}
+          >
+            <ToolCard 
+              icon={RefreshCw} 
+              title="Histórico Cloud" 
+              description="Acesse suas criações anteriores de qualquer dispositivo."
+              onClick={() => onNavigate('history')}
             />
           </motion.div>
         </div>
@@ -533,7 +532,7 @@ export function Home({ onNavigate, selectedImage, userRole, onOpenPricing, appCo
   );
 }
 
-function ToolCard({ icon: Icon, title, description, onClick, isPro, tag }: any) {
+function ToolCard({ icon: Icon, title, description, onClick, tag }: any) {
   return (
     <motion.div 
       whileHover={{ 
@@ -545,12 +544,7 @@ function ToolCard({ icon: Icon, title, description, onClick, isPro, tag }: any) 
       onClick={onClick}
       className="bg-white/70 dark:bg-slate-900/70 backdrop-blur-xl group p-8 rounded-[2rem] shadow-sm transition-all duration-500 flex flex-col items-start gap-6 border border-white/40 dark:border-slate-800/40 cursor-pointer h-full relative overflow-hidden"
     >
-      {isPro && (
-        <div className="absolute top-4 right-4 p-1.5 bg-yellow-400 rounded-full text-white shadow-lg shadow-yellow-500/20 z-10">
-          <Crown size={12} />
-        </div>
-      )}
-      {tag && !isPro && (
+      {tag && (
         <div className="absolute top-4 right-4 px-2 py-1 bg-indigo-600 rounded-lg text-white text-[8px] font-black uppercase tracking-widest z-10">
           {tag}
         </div>

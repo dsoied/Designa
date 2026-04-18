@@ -21,11 +21,10 @@ import { useBatch } from '../context/BatchContext';
 
 interface BatchProcessorProps {
   userRole?: string;
-  onOpenPricing: () => void;
   onNavigate: (screen: any) => void;
 }
 
-export function BatchProcessor({ userRole, onOpenPricing, onNavigate }: BatchProcessorProps) {
+export function BatchProcessor({ userRole, onNavigate }: BatchProcessorProps) {
   const { 
     files, 
     isProcessing, 
@@ -42,7 +41,6 @@ export function BatchProcessor({ userRole, onOpenPricing, onNavigate }: BatchPro
 
   const tools = [
     { id: 'background', name: 'Remover Fundo', icon: Layers, color: 'text-indigo-600', bg: 'bg-indigo-50 dark:bg-indigo-900/20' },
-    { id: 'filters', name: 'Filtros Artísticos', icon: Palette, color: 'text-emerald-600', bg: 'bg-emerald-50 dark:bg-emerald-900/20' },
     { id: 'upscale', name: 'Melhorar Qualidade', icon: Sparkles, color: 'text-amber-600', bg: 'bg-amber-50 dark:bg-amber-900/20' },
   ];
 
@@ -58,16 +56,10 @@ export function BatchProcessor({ userRole, onOpenPricing, onNavigate }: BatchPro
   };
 
   const handleStartBatch = async () => {
-    if (userRole !== 'pro' && userRole !== 'admin') {
-      onOpenPricing();
-      return;
-    }
     try {
       await startBatch(userRole || 'free');
     } catch (err: any) {
-      if (err.message === 'PRO_REQUIRED') {
-        onOpenPricing();
-      }
+      console.error("Batch: Erro ao iniciar processamento:", err);
     }
   };
 
@@ -86,9 +78,6 @@ export function BatchProcessor({ userRole, onOpenPricing, onNavigate }: BatchPro
     <div className="max-w-6xl mx-auto p-6 sm:p-12 space-y-12">
       <header className="flex flex-col md:flex-row md:items-end justify-between gap-6">
         <div className="space-y-2">
-          <div className="inline-flex items-center gap-2 px-3 py-1 bg-yellow-400/10 text-yellow-600 rounded-full text-[10px] font-black uppercase tracking-widest">
-            <Crown size={12} /> Recurso Pro
-          </div>
           <h2 className="text-4xl font-black tracking-tight text-slate-900 dark:text-white">Processamento em Lote</h2>
           <p className="text-slate-500 dark:text-slate-400 max-w-xl">
             Economize tempo processando dezenas de imagens simultaneamente com o poder da nossa IA.
@@ -171,22 +160,6 @@ export function BatchProcessor({ userRole, onOpenPricing, onNavigate }: BatchPro
               </div>
             </div>
           </section>
-
-          {userRole !== 'pro' && userRole !== 'admin' && (
-            <section className="bg-gradient-to-br from-indigo-600 to-purple-700 rounded-3xl p-6 text-white shadow-xl shadow-indigo-500/20 space-y-4">
-              <Crown className="text-yellow-400" size={32} />
-              <h4 className="text-xl font-black leading-tight">Desbloqueie o Processamento em Lote</h4>
-              <p className="text-indigo-100 text-sm font-medium leading-relaxed">
-                Usuários gratuitos podem apenas visualizar. Assine o Pro para processar até 50 imagens de uma vez.
-              </p>
-              <button 
-                onClick={onOpenPricing}
-                className="w-full py-3 bg-white text-indigo-600 rounded-xl font-black uppercase tracking-widest text-xs shadow-lg shadow-black/10 flex items-center justify-center gap-2"
-              >
-                Ver Planos <ArrowRight size={14} />
-              </button>
-            </section>
-          )}
         </aside>
 
         {/* Main: File Grid */}

@@ -2,6 +2,11 @@ import { initializeApp } from 'firebase/app';
 import { getAuth, GoogleAuthProvider, signInWithPopup, signOut, onAuthStateChanged, User as FirebaseUser, createUserWithEmailAndPassword, signInWithEmailAndPassword, updateProfile, sendPasswordResetEmail, setPersistence, browserLocalPersistence, browserSessionPersistence } from 'firebase/auth';
 import { getFirestore, doc, setDoc, getDoc, serverTimestamp, collection, query, where, orderBy, onSnapshot, addDoc, deleteDoc, updateDoc, getDocs, limit } from 'firebase/firestore';
 import { getStorage, ref, uploadString, getDownloadURL, deleteObject } from 'firebase/storage';
+import { createClient, SupabaseClient } from '@supabase/supabase-js';
+
+// Supabase Lazy Initialization
+let supabaseInstance: SupabaseClient | null = null;
+let supabaseBucketName: string = 'images';
 
 // Import the Firebase configuration
 import firebaseAppletConfig from '../firebase-applet-config.json';
@@ -29,6 +34,39 @@ export const db = getFirestore(app, firestoreDatabaseId);
 export const auth = getAuth(app);
 export const storage = getStorage(app);
 export const googleProvider = new GoogleAuthProvider();
+
+export const getSupabaseClient = async (): Promise<SupabaseClient | null> => {
+  if (supabaseInstance) return supabaseInstance;
+
+  // 1. Try environment variables
+  const envUrl = import.meta.env.VITE_SUPABASE_URL;
+  const envKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
+  const envBucket = import.meta.env.VITE_SUPABASE_BUCKET;
+
+  if (envUrl && envKey) {
+    if (envBucket) supabaseBucketName = envBucket;
+    supabaseInstance = createClient(envUrl, envKey);
+    return supabaseInstance;
+  }
+
+  // 2. Try Firestore config
+  try {
+    const storageConfigRef = doc(db, 'config', 'storage');
+    const storageSnap = await getDoc(storageConfigRef);
+    if (storageSnap.exists()) {
+      const { supabaseUrl, supabaseAnonKey, supabaseBucket } = storageSnap.data();
+      if (supabaseUrl && supabaseAnonKey) {
+        if (supabaseBucket) supabaseBucketName = supabaseBucket;
+        supabaseInstance = createClient(supabaseUrl, supabaseAnonKey);
+        return supabaseInstance;
+      }
+    }
+  } catch (error) {
+    console.error('getSupabaseClient: Erro ao buscar config do Firestore:', error);
+  }
+
+  return null;
+};
 
 // Error Handling for Firestore
 export enum OperationType {
@@ -187,30 +225,76 @@ export const resetPassword = async (email: string) => {
 export const uploadImageToStorage = async (base64Data: string, fileName: string, path: string): Promise<string> => {
   if (!auth.currentUser) throw new Error("Usuário não autenticado");
   
-  if (!firebaseConfig.storageBucket) {
-    console.warn("Firebase: Storage Bucket não configurado! Usando fallback de memória (Base64).");
-    return base64Data;
+  // PRIMARY: Try Supabase first if configured
+  const supabase = await getSupabaseClient();
+  const supabaseBucket = supabaseBucketName;
+  
+  if (supabase) {
+    try {
+      console.log(`Supabase: Iniciando upload para bucket '${supabaseBucket}' como ${path}/${fileName}`);
+      
+      // Clean base64
+      const base64Clean = base64Data.includes(',') ? base64Data.split(',')[1] : base64Data;
+      
+      // Convert to binary
+      const byteCharacters = atob(base64Clean);
+      const byteNumbers = new Array(byteCharacters.length);
+      for (let i = 0; i < byteCharacters.length; i++) {
+        byteNumbers[i] = byteCharacters.charCodeAt(i);
+      }
+      const byteArray = new Uint8Array(byteNumbers);
+      const blob = new Blob([byteArray], { type: 'image/png' });
+
+      const fullPath = `${path}/${fileName}`.replace(/^\/+/, ''); // Ensure no leading slash
+
+      const { data, error } = await supabase.storage
+        .from(supabaseBucket)
+        .upload(fullPath, blob, {
+          contentType: 'image/png',
+          upsert: true
+        });
+
+      if (error) {
+        if (error.message.includes('bucket not found')) {
+          console.warn(`Supabase: Bucket '${supabaseBucket}' não encontrado. Verifique sua configuração.`);
+          throw new Error('BUCKET_NOT_FOUND');
+        }
+        throw error;
+      }
+
+      const { data: { publicUrl } } = supabase.storage
+        .from(supabaseBucket)
+        .getPublicUrl(fullPath);
+
+      console.log("Supabase: Upload concluído com sucesso. URL pública gerada.");
+      return publicUrl;
+    } catch (error) {
+      console.error('Supabase: Erro no upload:', error);
+      // Fall through to Firebase
+    }
   }
 
-  try {
-    const storageRef = ref(storage, `${path}/${fileName}`);
-    console.log(`Firebase: Iniciando upload para ${path}/${fileName} (Bucket: ${firebaseConfig.storageBucket})`);
-    
-    // If it's a data URL, use 'data_url' format, otherwise assume 'base64'
-    const format = base64Data.startsWith('data:') ? 'data_url' : 'base64';
-    
-    // For large files, uploadString can be slow. Let's add a timeout log if needed
-    const uploadTask = uploadString(storageRef, base64Data, format);
-    
-    await uploadTask;
-    const url = await getDownloadURL(storageRef);
-    console.log("Firebase: Upload concluído com sucesso. URL gerada.");
-    return url;
-  } catch (error: any) {
-    console.error('Firebase: Erro detalhado no upload, usando fallback de memória:', error);
-    // Fallback: Return the original base64 data so the app continues to work
-    return base64Data;
+  // SECONDARY: Firebase Storage fallback
+  if (firebaseConfig.storageBucket) {
+    try {
+      const storageRef = ref(storage, `${path}/${fileName}`);
+      console.log(`Firebase: Iniciando upload para ${path}/${fileName} (Bucket: ${firebaseConfig.storageBucket})`);
+      
+      const format = base64Data.startsWith('data:') ? 'data_url' : 'base64';
+      const uploadTask = uploadString(storageRef, base64Data, format);
+      
+      await uploadTask;
+      const url = await getDownloadURL(storageRef);
+      console.log("Firebase: Upload concluído com sucesso. URL gerada.");
+      return url;
+    } catch (error: any) {
+      console.error('Firebase: Erro no upload:', error);
+    }
   }
+
+  // LAST RESORT: Return original base64
+  console.warn("Storage: Ambos Supabase e Firebase falharam ou não estão configurados. Usando Base64 local.");
+  return base64Data;
 };
 
 export { onAuthStateChanged, doc, setDoc, getDoc, serverTimestamp, collection, query, where, orderBy, onSnapshot, addDoc, deleteDoc, updateDoc, getDocs, limit, ref, uploadString, getDownloadURL, deleteObject, updateProfile };

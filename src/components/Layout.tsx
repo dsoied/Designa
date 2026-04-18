@@ -17,32 +17,25 @@ interface SidebarProps {
   userData?: any;
   userRole?: string;
   onLogout: () => void;
-  onOpenPricing: () => void;
   appConfig?: AppConfig;
   monetization?: MonetizationSettings | null;
   theme?: 'light' | 'dark';
   onToggleTheme?: () => void;
 }
 
-export function Sidebar({ activeScreen, onNavigate, isOpen, onClose, user, userData, userRole, onLogout, onOpenPricing, appConfig, monetization, theme, onToggleTheme }: SidebarProps) {
+export function Sidebar({ activeScreen, onNavigate, isOpen, onClose, user, userData, userRole, onLogout, appConfig, monetization, theme, onToggleTheme }: SidebarProps) {
   const { t } = useLanguage();
   const navItems = [
     { id: 'home', label: t('home'), icon: Home },
     { id: 'generate', label: 'Criar com IA', icon: Sparkles },
     { id: 'upload', label: 'Carregar Imagem', icon: Upload },
     { id: 'editor', label: 'Remover Fundo', icon: Layers },
-    { id: 'objects', label: 'Remover Objeto', icon: Eraser },
-    { id: 'batch', label: 'Processamento Lote', icon: Layers, isPro: true },
-    { id: 'magic', label: 'Edição Mágica', icon: Wand2, isPro: true },
-    { id: 'outpaint', label: 'Expansão Generativa', icon: Maximize2, isPro: true },
-    { id: 'variations', label: 'Variações de Imagem', icon: RefreshCw, isPro: true },
-    { id: 'filters', label: 'Filtros Artísticos', icon: Palette },
     { id: 'history', label: t('history'), icon: History },
-    { id: 'pricing_tab', label: 'Planos & Preços', icon: Crown },
     { id: 'notifications', label: t('notifications'), icon: Bell },
     { id: 'profile', label: t('profile'), icon: User },
     { id: 'signup', label: t('signup'), icon: User },
     { id: 'settings', label: t('settings'), icon: Settings },
+    { id: 'batch', label: 'Processamento Lote', icon: Layers }
   ];
 
   if (userRole === 'admin') {
@@ -50,11 +43,7 @@ export function Sidebar({ activeScreen, onNavigate, isOpen, onClose, user, userD
   }
 
   const handleNavigate = (screen: string) => {
-    if (screen === 'pricing_tab') {
-      onOpenPricing();
-    } else {
-      onNavigate(screen as Screen);
-    }
+    onNavigate(screen as Screen);
     onClose();
   };
 
@@ -116,9 +105,6 @@ export function Sidebar({ activeScreen, onNavigate, isOpen, onClose, user, userD
               >
                 <Icon size={20} />
                 <span className="flex-1 text-left">{item.label}</span>
-                {item.isPro && (
-                  <Crown size={14} className="text-yellow-500" />
-                )}
               </motion.button>
             );
           })}
@@ -151,17 +137,11 @@ export function Sidebar({ activeScreen, onNavigate, isOpen, onClose, user, userD
                 ) : (
                   <User size={20} />
                 )}
-                {(userRole === 'pro' || userRole === 'admin') && (
-                  <div className="absolute -top-1 -right-1 w-4 h-4 bg-yellow-400 rounded-full border-2 border-white dark:border-slate-900 flex items-center justify-center">
-                    <Crown size={8} className="text-white" />
-                  </div>
-                )}
               </div>
               <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-1">
                   <p className="text-xs font-bold text-slate-900 dark:text-white truncate">{user.displayName || 'Usuário'}</p>
-                  {userRole === 'pro' && <span className="px-1.5 py-0.5 bg-yellow-400 text-[8px] font-black text-white rounded uppercase tracking-tighter">Pro</span>}
-                  {userRole === 'admin' && <span className="px-1.5 py-0.5 bg-indigo-600 text-[8px] font-black text-white rounded uppercase tracking-tighter">Admin</span>}
+                  {userRole === 'admin' && <span className="px-1.5 py-0.5 bg-indigo-600 text-[8px] font-black text-white rounded uppercase tracking-tighter">Dono</span>}
                 </div>
                 <p className="text-[10px] text-slate-500 truncate">{user.email}</p>
               </div>
@@ -188,13 +168,12 @@ interface TopBarProps {
   userData?: any;
   userRole?: string;
   hasUnreadNotifications: boolean;
-  onOpenPricing: () => void;
   appConfig?: AppConfig;
   theme?: 'light' | 'dark';
   onToggleTheme?: () => void;
 }
 
-export function TopBar({ activeScreen, onMenuClick, onNavigate, user, userData, userRole, hasUnreadNotifications, onOpenPricing, appConfig, theme, onToggleTheme }: TopBarProps) {
+export function TopBar({ activeScreen, onMenuClick, onNavigate, user, userData, userRole, hasUnreadNotifications, appConfig, theme, onToggleTheme }: TopBarProps) {
   const { t } = useLanguage();
   const { isProcessing, files } = useBatch();
   const processingCount = files.filter(f => f.status === 'processing').length;
@@ -205,23 +184,14 @@ export function TopBar({ activeScreen, onMenuClick, onNavigate, user, userData, 
     home: t('home'),
     editor: 'Remover Fundo',
     history: t('history'),
-    objects: 'Remover Objeto',
     tools: 'Recursos',
     settings: t('settings'),
     upload: 'Carregar Imagem',
-    upscale: 'Melhorar Qualidade',
-    face: 'Retoque Facial',
-    filters: 'Filtros Artísticos',
-    crop: 'Recorte & Ajuste',
-    layers: 'Composição',
-    magic: 'Edição Mágica',
     signup: t('signup'),
     notifications: t('notifications'),
     batch: 'Processamento em Lote',
     admin: t('admin'),
     generate: 'Criar com IA',
-    outpaint: 'Expansão Generativa',
-    variations: 'Variações de Imagem',
     terms: 'Termos e Condições',
     privacy: 'Política de Privacidade',
     profile: t('profile')
@@ -315,23 +285,8 @@ export function TopBar({ activeScreen, onMenuClick, onNavigate, user, userData, 
             ) : (
               <User size={20} />
             )}
-            {(userRole === 'pro' || userRole === 'admin') && (
-              <div className="absolute top-0 right-0 w-2.5 h-2.5 bg-yellow-400 rounded-full border border-white dark:border-slate-950 flex items-center justify-center">
-                <Crown size={6} className="text-white" />
-              </div>
-            )}
           </motion.button>
         </div>
-        {user && userRole !== 'pro' && userRole !== 'admin' && (
-          <motion.button 
-            whileHover={{ scale: 1.05, boxShadow: "0 10px 15px -3px rgba(79, 70, 229, 0.3)" }}
-            whileTap={{ scale: 0.95 }}
-            onClick={onOpenPricing}
-            className="hidden min-[480px]:block px-3 sm:px-5 py-2 bg-indigo-600 text-white rounded-full text-[10px] sm:text-xs font-bold uppercase tracking-widest transition-all shadow-lg shadow-indigo-500/20 whitespace-nowrap"
-          >
-            <span className="hidden sm:inline">Atualizar para </span>Pro
-          </motion.button>
-        )}
       </div>
     </header>
   );
