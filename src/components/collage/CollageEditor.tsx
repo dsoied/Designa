@@ -59,6 +59,7 @@ export function CollageEditor({ onNavigate, notify }: CollageEditorProps) {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [contextMenu, setContextMenu] = useState<{ x: number, y: number, visible: boolean } | null>(null);
   const [clipboard, setClipboard] = useState<CanvasElement[]>([]);
+  const [zoom, setZoom] = useState(1);
 
   const stageRef = useRef<any>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -117,12 +118,19 @@ export function CollageEditor({ onNavigate, notify }: CollageEditorProps) {
     const updateSize = () => {
       if (containerRef.current) {
         const { clientWidth, clientHeight } = containerRef.current;
-        setDimensions({ width: clientWidth - 64, height: clientHeight - 64 });
+        const isMobile = window.innerWidth < 1024;
+        const padding = isMobile ? 12 : 40; // Reduced padding
+        setDimensions({ width: Math.max(200, clientWidth - padding), height: Math.max(200, clientHeight - padding) });
       }
     };
     updateSize();
+    // Use a small delay to ensure container has settled
+    const timer = setTimeout(updateSize, 100);
     window.addEventListener('resize', updateSize);
-    return () => window.removeEventListener('resize', updateSize);
+    return () => {
+      window.removeEventListener('resize', updateSize);
+      clearTimeout(timer);
+    };
   }, []);
 
   const handleUpdate = useCallback((id: string, attrs: Partial<CanvasElement>, saveToHistory = false) => {
@@ -180,18 +188,25 @@ export function CollageEditor({ onNavigate, notify }: CollageEditorProps) {
 
   const handleContextMenu = (e: any) => {
     e.evt.preventDefault();
+    
+    // Get pointer position relative to the stage
     const stage = e.target.getStage();
     const pointerPos = stage.getPointerPosition();
     
     // Select element if clicked on one
-    const clickedOnEmpty = e.target === stage;
+    const target = e.target;
+    const isStage = target === stage;
+    const id = !isStage ? (target.id() || target.getParent?.()?.id?.()) : null;
+    const clickedOnEmpty = !id || isStage || id === 'canvas-background';
+    
     if (!clickedOnEmpty) {
-      const id = e.target.id() || e.target.parent()?.id();
-      if (id && !selectedIds.includes(id)) {
+      // Correct selection on right-click as requested
+      if (!selectedIds.includes(id)) {
         setSelectedIds([id]);
       }
     } else {
-      // Don't deselect automatically here if we want to paste in specific location
+      // If clicked on empty area, we might want to clear selection or keep it for pasting
+      // user said "first we select the object with the right button of the mouse", so we keep that
     }
 
     setContextMenu({
@@ -304,9 +319,16 @@ export function CollageEditor({ onNavigate, notify }: CollageEditorProps) {
         return;
       }
 
-      // User explicitly asked to only use 'Delete' for removal, not 'Backspace'
-      if (e.key === 'Delete' && selectedIds.length > 0) {
+      // Delete elements with Delete or Backspace
+      if ((e.key === 'Delete' || e.key === 'Backspace') && selectedIds.length > 0) {
         removeElements(selectedIds);
+      } else if (e.key.toLowerCase() === 't') {
+        // Add text when pressing 'T'
+        addText();
+      } else if (e.ctrlKey && e.key.toLowerCase() === 'r') {
+        // Remove selection with Ctrl+R
+        e.preventDefault();
+        if (selectedIds.length > 0) removeElements(selectedIds);
       } else if (e.ctrlKey && e.key === 'z') {
         const prev = undo();
         if (prev) setElements(prev.elements);
@@ -516,9 +538,9 @@ export function CollageEditor({ onNavigate, notify }: CollageEditorProps) {
   };
 
   return (
-    <div className="h-[calc(100vh-64px)] flex overflow-hidden bg-slate-100 dark:bg-slate-950 font-sans">
-      {/* Sidebar - Functional Rail */}
-      <div className="w-[72px] bg-white dark:bg-slate-900 border-r border-slate-200 dark:border-slate-800 flex flex-col items-center py-8 gap-6 z-30">
+    <div className="h-screen flex overflow-hidden bg-slate-100 dark:bg-slate-950 font-sans">
+      {/* Sidebar - Functional Rail - Hide on mobile, show as overlay or drawer if needed */}
+      <div className={`w-[72px] bg-white dark:bg-slate-900 border-r border-slate-200 dark:border-slate-800 flex flex-col items-center py-8 gap-6 z-30 transition-transform lg:translate-x-0 ${sidebarCollapsed ? '-translate-x-full lg:translate-x-0' : 'translate-x-0'} fixed lg:relative h-full`}>
         {[
           { id: 'templates', icon: LayoutTemplate, label: 'Modelos' },
           { id: 'resize', icon: Maximize, label: 'Tamanho' },
@@ -553,7 +575,7 @@ export function CollageEditor({ onNavigate, notify }: CollageEditorProps) {
       </div>
 
       {/* Main Container */}
-      <div className="flex-1 flex flex-col min-w-0">
+      <div className="flex-1 flex flex-col min-w-0 bg-slate-50 dark:bg-slate-950">
         {/* Top Header Rail */}
         <header className="h-16 bg-white dark:bg-slate-900 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between px-8 z-20">
           <div className="flex items-center gap-6">
@@ -587,6 +609,30 @@ export function CollageEditor({ onNavigate, notify }: CollageEditorProps) {
           </div>
 
           <div className="flex items-center gap-4">
+             {/* Canvas Zoom Controls (Magnifying Glass) */}
+             <div className="hidden sm:flex items-center bg-slate-50 dark:bg-slate-800 rounded-xl px-2 h-10 border border-slate-100 dark:border-slate-700">
+                <button 
+                  onClick={() => setZoom(prev => Math.max(0.1, prev - 0.1))}
+                  className="p-1.5 text-slate-400 hover:text-indigo-600 transition-colors"
+                  title="Diminuir Zoom"
+                >
+                  <Minus size={14} />
+                </button>
+                <div className="flex items-center gap-1.5 px-2">
+                   <Maximize size={12} className="text-slate-400" />
+                   <span className="text-[10px] font-black text-slate-600 dark:text-slate-300 min-w-[35px] text-center">
+                     {Math.round(zoom * 100)}%
+                   </span>
+                </div>
+                <button 
+                  onClick={() => setZoom(prev => Math.min(5, prev + 0.1))}
+                  className="p-1.5 text-slate-400 hover:text-indigo-600 transition-colors"
+                  title="Aumentar Zoom"
+                >
+                  <Plus size={14} />
+                </button>
+             </div>
+
              <button 
                onClick={handleSave}
                disabled={isSaving || elements.length === 0}
@@ -614,27 +660,26 @@ export function CollageEditor({ onNavigate, notify }: CollageEditorProps) {
           </div>
         </header>
 
-        {/* Content Area */}
-        <div className="flex-1 flex overflow-hidden relative">
-          {/* Sidebar Toggle Button (Floating) */}
-          <button 
-            onClick={() => setSidebarCollapsed(!sidebarCollapsed)}
-            className="absolute top-4 left-4 z-40 p-2 bg-white dark:bg-slate-800 shadow-xl rounded-full text-indigo-600 hover:scale-110 transition-all border border-slate-100 dark:border-slate-700"
-            title={sidebarCollapsed ? "Mostrar Ferramentas" : "Ocultar Ferramentas"}
-          >
-             {sidebarCollapsed ? <LayersIcon size={18} /> : <X size={18} />}
-          </button>
-
-          {/* Tools Expanded View */}
-          {!sidebarCollapsed && (
-            <aside 
-              className="w-80 bg-white dark:bg-slate-900 border-r border-slate-100 dark:border-slate-800 flex flex-col z-10 animate-in slide-in-from-left duration-300"
+          {/* Content Area */}
+          <div className="flex-1 flex overflow-hidden relative">
+            {/* Sidebar Toggle Button (Floating) */}
+            <button 
+              onClick={() => setSidebarCollapsed(!sidebarCollapsed)}
+              className="absolute top-4 left-4 z-40 p-3 bg-white dark:bg-slate-800 shadow-2xl rounded-2xl text-indigo-600 hover:scale-110 transition-all border border-slate-100 dark:border-slate-700 lg:hidden"
+              title={sidebarCollapsed ? "Mostrar Ferramentas" : "Ocultar Ferramentas"}
             >
-            <div className="flex-1 overflow-y-auto p-8 space-y-10 custom-scrollbar">
+               {sidebarCollapsed ? <LayoutsIcon size={20} /> : <X size={20} />}
+            </button>
+
+            {/* Tools Expanded View */}
+            <aside 
+              className={`fixed lg:relative inset-y-0 left-0 w-80 bg-white dark:bg-slate-900 border-r border-slate-100 dark:border-slate-800 flex flex-col z-40 transition-transform duration-300 transform ${sidebarCollapsed ? '-translate-x-full' : 'translate-x-[72px] lg:translate-x-0'}`}
+            >
+            <div className="flex-1 overflow-y-auto p-5 space-y-6 custom-scrollbar">
               
               {activeTab === 'templates' && (
-                <section className="space-y-8 animate-in fade-in slide-in-from-bottom-4">
-                  <div className="space-y-2">
+                <section className="space-y-5 animate-in fade-in slide-in-from-bottom-4">
+                  <div className="space-y-1.5">
                     <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Modelos Prontos</h3>
                     <p className="text-[10px] text-slate-400">Layouts base para começar rápido</p>
                   </div>
@@ -697,13 +742,13 @@ export function CollageEditor({ onNavigate, notify }: CollageEditorProps) {
               )}
 
               {activeTab === 'resize' && (
-                <section className="space-y-8 animate-in fade-in slide-in-from-bottom-4">
-                  <div className="space-y-2">
+                <section className="space-y-5 animate-in fade-in slide-in-from-bottom-4">
+                  <div className="space-y-1.5">
                     <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Tamanho do Design</h3>
                     <p className="text-[10px] text-slate-400">Escolha um formato ou defina um tamanho personalizado</p>
                   </div>
 
-                  <div className="grid grid-cols-1 gap-3">
+                  <div className="grid grid-cols-1 gap-2">
                     {[
                       { id: 'insta-post', label: 'Instagram Post', w: 1080, h: 1080 },
                       { id: 'insta-story', label: 'Instagram Story', w: 1080, h: 1920 },
@@ -729,16 +774,16 @@ export function CollageEditor({ onNavigate, notify }: CollageEditorProps) {
                     ))}
                   </div>
 
-                  <div className="space-y-4 pt-6 border-t border-slate-100 dark:border-slate-800">
+                  <div className="space-y-3 pt-5 border-t border-slate-100 dark:border-slate-800">
                      <label className="text-[9px] font-bold text-slate-400 uppercase tracking-tighter">Tamanho Personalizado</label>
-                     <div className="grid grid-cols-2 gap-3">
+                     <div className="grid grid-cols-2 gap-2">
                         <div className="space-y-1">
                            <label className="text-[9px] text-slate-400 uppercase tracking-tight font-black">Largura</label>
                            <input 
                              type="number" 
                              value={canvasConfig.width}
                              onChange={(e) => updateCanvasConfig({ ...canvasConfig, width: parseInt(e.target.value) || 1080 })}
-                             className="w-full bg-slate-50 dark:bg-slate-800 border-none rounded-xl px-3 py-3 text-xs font-mono focus:ring-2 focus:ring-indigo-500/20"
+                             className="w-full bg-slate-50 dark:bg-slate-800 border-none rounded-xl px-3 py-2.5 text-xs font-mono focus:ring-2 focus:ring-indigo-500/20"
                            />
                         </div>
                         <div className="space-y-1">
@@ -747,7 +792,7 @@ export function CollageEditor({ onNavigate, notify }: CollageEditorProps) {
                              type="number" 
                              value={canvasConfig.height}
                              onChange={(e) => updateCanvasConfig({ ...canvasConfig, height: parseInt(e.target.value) || 1080 })}
-                             className="w-full bg-slate-50 dark:bg-slate-800 border-none rounded-xl px-3 py-3 text-xs font-mono focus:ring-2 focus:ring-indigo-500/20"
+                             className="w-full bg-slate-50 dark:bg-slate-800 border-none rounded-xl px-3 py-2.5 text-xs font-mono focus:ring-2 focus:ring-indigo-500/20"
                            />
                         </div>
                      </div>
@@ -756,22 +801,22 @@ export function CollageEditor({ onNavigate, notify }: CollageEditorProps) {
               )}
 
               {activeTab === 'background' && (
-                <section className="space-y-8 animate-in fade-in slide-in-from-bottom-4">
-                  <div className="space-y-2">
+                <section className="space-y-6 animate-in fade-in slide-in-from-bottom-4">
+                  <div className="space-y-1.5">
                     <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Fundo da Tela</h3>
                     <p className="text-[10px] text-slate-400">Personalize a cor ou gradiente do projeto</p>
                   </div>
 
-                  <div className="space-y-6">
+                  <div className="space-y-4">
                     {/* Cor Sólida */}
-                    <div className="space-y-3">
+                    <div className="space-y-2">
                        <label className="text-[9px] font-bold text-slate-400 uppercase tracking-tighter">Cor Sólida</label>
                        <div className="flex gap-2">
                           <input 
                             type="color" 
                             value={canvasConfig.backgroundColor} 
                             onChange={(e) => updateCanvasConfig({ ...canvasConfig, backgroundColor: e.target.value, backgroundGradient: undefined })}
-                            className="w-12 h-12 rounded-xl cursor-pointer border-none p-0 overflow-hidden bg-transparent"
+                            className="w-10 h-10 rounded-xl cursor-pointer border-none p-0 overflow-hidden bg-transparent"
                           />
                           <input 
                             type="text" 
@@ -783,7 +828,7 @@ export function CollageEditor({ onNavigate, notify }: CollageEditorProps) {
                     </div>
 
                     {/* Predefinições */}
-                    <div className="grid grid-cols-6 gap-2">
+                    <div className="grid grid-cols-6 gap-1.5">
                        {[
                           '#FFFFFF', '#F8FAFC', '#F1F5F9', '#000000', '#EF4444', '#F97316',
                           '#F59E0B', '#10B981', '#3B82F6', '#6366F1', '#8B5CF6', '#EC4899'
@@ -798,9 +843,9 @@ export function CollageEditor({ onNavigate, notify }: CollageEditorProps) {
                     </div>
 
                     {/* Gradientes */}
-                    <div className="space-y-3 pt-6 border-t border-slate-100 dark:border-slate-800">
+                    <div className="space-y-2 pt-4 border-t border-slate-100 dark:border-slate-800">
                        <label className="text-[9px] font-bold text-slate-400 uppercase tracking-tighter">Gradientes Populares</label>
-                       <div className="grid grid-cols-2 gap-3">
+                       <div className="grid grid-cols-2 gap-2">
                           {[
                             { start: '#6366F1', end: '#A855F7', label: 'Aurora' },
                             { start: '#F59E0B', end: '#EF4444', label: 'Sunset' },
@@ -813,10 +858,10 @@ export function CollageEditor({ onNavigate, notify }: CollageEditorProps) {
                                  ...canvasConfig, 
                                  backgroundGradient: { start: grad.start, end: grad.end, type: 'linear' } 
                                })}
-                               className="h-16 rounded-xl border-2 border-white dark:border-slate-800 shadow-sm overflow-hidden relative group transition-all hover:scale-105 active:scale-95"
+                               className="h-12 rounded-xl border-2 border-white dark:border-slate-800 shadow-sm overflow-hidden relative group transition-all hover:scale-105 active:scale-95"
                                style={{ background: `linear-gradient(135deg, ${grad.start}, ${grad.end})` }}
                              >
-                               <span className="absolute inset-0 flex items-center justify-center text-[10px] font-black text-white uppercase tracking-widest bg-black/20 opacity-0 group-hover:opacity-100 transition-opacity">
+                                <span className="absolute inset-0 flex items-center justify-center text-[8px] font-black text-white uppercase tracking-widest bg-black/20 opacity-0 group-hover:opacity-100 transition-opacity">
                                  {grad.label}
                                </span>
                              </button>
@@ -828,13 +873,13 @@ export function CollageEditor({ onNavigate, notify }: CollageEditorProps) {
               )}
 
               {activeTab === 'layouts' && (
-                <section className="space-y-8">
-                  <div className="space-y-2">
+                <section className="space-y-6">
+                  <div className="space-y-1.5">
                     <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Layouts de Grade</h3>
                     <p className="text-[10px] text-slate-400">Selecione uma base para sua colagem</p>
                   </div>
 
-                  <div className="grid grid-cols-2 gap-3">
+                  <div className="grid grid-cols-2 gap-2.5">
                     {[
                       { id: '2x1', label: 'Duo Vertical', cells: 2 },
                       { id: '1x2', label: 'Duo Horizontal', cells: 2 },
@@ -856,8 +901,8 @@ export function CollageEditor({ onNavigate, notify }: CollageEditorProps) {
                     ))}
                   </div>
 
-                  <div className="space-y-6 pt-6 border-t border-slate-100 dark:border-slate-800">
-                     <div className="space-y-4">
+                  <div className="space-y-6 pt-5 border-t border-slate-100 dark:border-slate-800">
+                     <div className="space-y-3">
                         <div className="flex justify-between items-center">
                            <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Espaçamento (Gap)</label>
                            <span className="text-[10px] font-black text-indigo-600">{layoutGap}px</span>
@@ -874,7 +919,7 @@ export function CollageEditor({ onNavigate, notify }: CollageEditorProps) {
                         />
                      </div>
 
-                     <div className="space-y-4">
+                     <div className="space-y-3">
                         <div className="flex justify-between items-center">
                            <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Arredondamento</label>
                            <span className="text-[10px] font-black text-indigo-600">{frameRadius}px</span>
@@ -977,7 +1022,7 @@ export function CollageEditor({ onNavigate, notify }: CollageEditorProps) {
 
               {/* Dynamic Property Bar when something is selected */}
               {selectedIds.length > 0 && firstSelected && (
-                <div className="pt-10 border-t border-slate-100 dark:border-slate-800">
+                <div className="pt-6 border-t border-slate-100 dark:border-slate-800">
                     <PropertyPanel 
                       element={firstSelected} 
                       onUpdate={(id, attrs) => {
@@ -991,99 +1036,76 @@ export function CollageEditor({ onNavigate, notify }: CollageEditorProps) {
               )}
             </div>
           </aside>
-          )}
 
           {/* Central Workspace */}
           <main 
             ref={containerRef}
-            className="flex-1 bg-[#F5F5F7] dark:bg-slate-950 p-12 overflow-hidden flex flex-col items-center justify-center relative touch-none"
+            className="flex-1 bg-slate-200/50 dark:bg-slate-950 p-2 lg:p-10 overflow-hidden flex flex-col items-center justify-center relative touch-none"
           >
             {/* Contextual Toolbar (Canva-style top bar) */}
             <AnimatePresence>
-              {selectedIds.length === 1 && firstSelected && firstSelected.type === 'text' && (
+              {selectedIds.length === 1 && firstSelected && (
                 <motion.div
                   initial={{ opacity: 0, y: -20 }}
                   animate={{ opacity: 1, y: 0 }}
                   exit={{ opacity: 0, y: -20 }}
-                  className="absolute top-8 left-1/2 -translate-x-1/2 bg-white dark:bg-slate-900 shadow-2xl rounded-2xl border border-slate-200 dark:border-slate-800 p-2 z-40 flex items-center gap-2"
+                  className="absolute top-4 lg:top-8 left-1/2 -translate-x-1/2 bg-white dark:bg-slate-900 shadow-2xl rounded-2xl border border-slate-200 dark:border-slate-800 p-1.5 lg:p-2 z-40 flex items-center gap-1.5 lg:gap-2 max-w-[90vw] overflow-x-auto"
                 >
-                   {/* Font Selector */}
-                   <select 
-                     value={firstSelected.fontFamily || 'Inter'} 
-                     onChange={(e) => handleUpdate(firstSelected.id, { fontFamily: e.target.value }, true)}
-                     className="bg-slate-50 dark:bg-slate-800 border-none rounded-xl px-3 py-1.5 text-xs font-bold cursor-pointer text-slate-700 dark:text-slate-200"
+                   {/* Mobile Zoom (Magnifying Glass) */}
+                   <div className="flex lg:hidden items-center bg-slate-50 dark:bg-slate-800 rounded-xl px-1">
+                      <button 
+                        onClick={() => setZoom(prev => Math.max(0.1, prev - 0.1))}
+                        className="p-1.5 text-slate-500"
+                      >
+                        <Minus size={14} />
+                      </button>
+                      <span className="text-[10px] font-bold w-10 text-center">{Math.round(zoom * 100)}%</span>
+                      <button 
+                        onClick={() => setZoom(prev => Math.min(5, prev + 0.1))}
+                        className="p-1.5 text-slate-500"
+                      >
+                        <Plus size={14} />
+                      </button>
+                   </div>
+
+                   {firstSelected.type === 'text' && (
+                     <>
+                        <div className="hidden sm:block h-6 w-px bg-slate-100 dark:bg-slate-800 mx-1" />
+                        <select 
+                          value={firstSelected.fontFamily || 'Inter'} 
+                          onChange={(e) => handleUpdate(firstSelected.id, { fontFamily: e.target.value }, true)}
+                          className="bg-slate-50 dark:bg-slate-800 border-none rounded-xl px-2 py-1 text-[10px] font-bold cursor-pointer text-slate-700 dark:text-slate-200"
+                        >
+                           <option value="Inter">Inter</option>
+                           <option value="Poppins">Poppins</option>
+                           <option value="Montserrat">Montserrat</option>
+                        </select>
+
+                        <div className="flex gap-1">
+                           <button 
+                             onClick={() => handleUpdate(firstSelected.id, { fontWeight: firstSelected.fontWeight === 'bold' ? 'normal' : 'bold' }, true)}
+                             className={`p-1.5 rounded-lg transition-all ${firstSelected.fontWeight === 'bold' ? 'bg-indigo-600 text-white shadow-lg' : 'text-slate-400 hover:bg-slate-50'}`}
+                           >
+                              <Bold size={14} />
+                           </button>
+                           <button 
+                             onClick={() => handleUpdate(firstSelected.id, { fontStyle: firstSelected.fontStyle === 'italic' ? 'normal' : 'italic' }, true)}
+                             className={`p-1.5 rounded-lg transition-all ${firstSelected.fontStyle === 'italic' ? 'bg-indigo-600 text-white shadow-lg' : 'text-slate-400 hover:bg-slate-50'}`}
+                           >
+                              <Italic size={14} />
+                           </button>
+                        </div>
+                     </>
+                   )}
+
+                   <div className="h-6 w-px bg-slate-100 dark:bg-slate-800 mx-1" />
+                   
+                   <button 
+                     onClick={() => removeElements([firstSelected.id])}
+                     className="p-1.5 rounded-lg text-slate-400 hover:bg-red-50 hover:text-red-500 transition-all"
                    >
-                      <option value="Inter">Inter</option>
-                      <option value="Poppins">Poppins</option>
-                      <option value="Montserrat">Montserrat</option>
-                      <option value="Arial">Arial</option>
-                      <option value="Verdana">Verdana</option>
-                      <option value="Times New Roman">Times New Roman</option>
-                   </select>
-
-                   <div className="w-px h-6 bg-slate-100 dark:bg-slate-800 mx-1" />
-
-                   <div className="flex gap-1">
-                      <button 
-                        onClick={() => handleUpdate(firstSelected.id, { fontWeight: firstSelected.fontWeight === 'bold' ? 'normal' : 'bold' }, true)}
-                        className={`p-2 rounded-xl transition-all ${firstSelected.fontWeight === 'bold' ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-500/20' : 'text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800'}`}
-                      >
-                         <Bold size={16} />
-                      </button>
-                      <button 
-                        onClick={() => handleUpdate(firstSelected.id, { fontStyle: firstSelected.fontStyle === 'italic' ? 'normal' : 'italic' }, true)}
-                        className={`p-2 rounded-xl transition-all ${firstSelected.fontStyle === 'italic' ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-500/20' : 'text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800'}`}
-                      >
-                         <Italic size={16} />
-                      </button>
-                   </div>
-
-                   <div className="w-px h-6 bg-slate-100 dark:bg-slate-800 mx-1" />
-
-                   <div className="flex gap-1 bg-slate-50 dark:bg-slate-800 p-1 rounded-xl">
-                      {(['left', 'center', 'right'] as const).map(align => (
-                         <button 
-                           key={align}
-                           onClick={() => handleUpdate(firstSelected.id, { align }, true)}
-                           className={`p-1.5 rounded-lg transition-all ${firstSelected.align === align ? 'bg-white dark:bg-slate-700 shadow-sm text-indigo-600' : 'text-slate-400'}`}
-                         >
-                            {align === 'left' && <AlignLeft size={16} />}
-                            {align === 'center' && <AlignCenter size={16} />}
-                            {align === 'right' && <AlignRight size={16} />}
-                         </button>
-                      ))}
-                   </div>
-
-                   <div className="w-px h-6 bg-slate-100 dark:bg-slate-800 mx-1" />
-
-                   <div className="flex gap-1">
-                      <button 
-                        onClick={() => {
-                          const lines = (firstSelected.text || '').split('\n');
-                          const isBullet = lines.every(l => l.startsWith('• '));
-                          const newText = isBullet 
-                            ? lines.map(l => l.replace('• ', '')).join('\n')
-                            : lines.map(l => l.startsWith('• ') ? l : `• ${l}`).join('\n');
-                          handleUpdate(firstSelected.id, { text: newText }, true);
-                        }}
-                        className="p-2 rounded-xl text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800 transition-all"
-                      >
-                         <List size={16} />
-                      </button>
-                      <button 
-                        onClick={() => {
-                          const lines = (firstSelected.text || '').split('\n');
-                          const isOrdered = lines.every((l, i) => l.startsWith(`${i+1}. `));
-                          const newText = isOrdered 
-                            ? lines.map(l => l.replace(/^\d+\. /, '')).join('\n')
-                            : lines.map((l, i) => l.match(/^\d+\. /) ? l : `${i+1}. ${l}`).join('\n');
-                          handleUpdate(firstSelected.id, { text: newText }, true);
-                        }}
-                        className="p-2 rounded-xl text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800 transition-all"
-                      >
-                         <ListOrdered size={16} />
-                      </button>
-                   </div>
+                      <Trash2 size={14} />
+                   </button>
                 </motion.div>
               )}
             </AnimatePresence>
@@ -1102,6 +1124,7 @@ export function CollageEditor({ onNavigate, notify }: CollageEditorProps) {
                 stageRef={stageRef}
                 onContextMenu={handleContextMenu}
                 onMouseDown={() => setContextMenu(null)}
+                zoom={zoom}
               />
 
               {/* Context Menu */}
@@ -1127,7 +1150,7 @@ export function CollageEditor({ onNavigate, notify }: CollageEditorProps) {
                           <Copy size={16} className="text-indigo-500" />
                           <span>Copiar</span>
                         </div>
-                        <span className="text-[10px] text-slate-400 font-medium">⌘C</span>
+                        <span className="text-[10px] text-slate-400 font-medium">Ctrl+C</span>
                       </button>
 
                       <button 
@@ -1139,7 +1162,7 @@ export function CollageEditor({ onNavigate, notify }: CollageEditorProps) {
                           <Scissors size={16} className="text-indigo-500" />
                           <span>Cortar</span>
                         </div>
-                        <span className="text-[10px] text-slate-400 font-medium">⌘X</span>
+                        <span className="text-[10px] text-slate-400 font-medium">Ctrl+X</span>
                       </button>
 
                       <button 
@@ -1151,9 +1174,25 @@ export function CollageEditor({ onNavigate, notify }: CollageEditorProps) {
                           <ClipboardPaste size={16} className="text-indigo-500" />
                           <span>Colar</span>
                         </div>
-                        <span className="text-[10px] text-slate-400 font-medium">⌘V</span>
+                        <span className="text-[10px] text-slate-400 font-medium">Ctrl+V</span>
                       </button>
                       
+                      {selectedIds.length === 1 && elements.find(el => el.id === selectedIds[0])?.type === 'text' && (
+                        <button 
+                          onClick={() => {
+                            setContextMenu(null);
+                            (window as any).__triggerTextEdit && (window as any).__triggerTextEdit(selectedIds[0]);
+                          }}
+                          className="flex items-center justify-between px-3 py-2 text-[11px] font-bold uppercase tracking-wider text-indigo-600 hover:bg-slate-50 dark:hover:bg-slate-800 rounded-xl transition-colors"
+                        >
+                          <div className="flex items-center gap-3">
+                            <TextIcon size={16} />
+                            <span>Editar Texto</span>
+                          </div>
+                          <span className="text-[10px] text-slate-400 font-medium">DblClick</span>
+                        </button>
+                      )}
+
                       <button 
                         onClick={() => handleMenuAction('duplicate')}
                         disabled={selectedIds.length === 0}
@@ -1163,7 +1202,7 @@ export function CollageEditor({ onNavigate, notify }: CollageEditorProps) {
                           <Copy size={16} className="text-indigo-500" />
                           <span>Duplicar</span>
                         </div>
-                        <span className="text-[10px] text-slate-400 font-medium">⌘D</span>
+                        <span className="text-[10px] text-slate-400 font-medium">Ctrl+D</span>
                       </button>
 
                       <div className="h-px bg-slate-100 dark:bg-slate-800 my-1 mx-2" />
@@ -1177,7 +1216,7 @@ export function CollageEditor({ onNavigate, notify }: CollageEditorProps) {
                           <GroupIcon size={16} className="text-indigo-500" />
                           <span>Agrupar</span>
                         </div>
-                        <span className="text-[10px] text-slate-400 font-medium">⌘G</span>
+                        <span className="text-[10px] text-slate-400 font-medium">Ctrl+G</span>
                       </button>
 
                       <button 
@@ -1189,7 +1228,7 @@ export function CollageEditor({ onNavigate, notify }: CollageEditorProps) {
                           <UngroupIcon size={16} className="text-indigo-500" />
                           <span>Desagrupar</span>
                         </div>
-                        <span className="text-[10px] text-slate-400 font-medium">⇧⌘G</span>
+                        <span className="text-[10px] text-slate-400 font-medium">Ctrl+Shift+G</span>
                       </button>
 
                       <div className="h-px bg-slate-100 dark:bg-slate-800 my-1 mx-2" />
@@ -1203,7 +1242,7 @@ export function CollageEditor({ onNavigate, notify }: CollageEditorProps) {
                           <Link size={16} className="text-indigo-500" />
                           <span>Adicionar Link</span>
                         </div>
-                        <span className="text-[10px] text-slate-400 font-medium">⌘K</span>
+                        <span className="text-[10px] text-slate-400 font-medium">Ctrl+K</span>
                       </button>
 
                       <button 
@@ -1215,7 +1254,7 @@ export function CollageEditor({ onNavigate, notify }: CollageEditorProps) {
                           <Trash2 size={16} />
                           <span>Excluir</span>
                         </div>
-                        <span className="text-[10px] text-red-300 font-medium">Del</span>
+                        <span className="text-[10px] text-red-300 font-medium">Del / Backspace / Ctrl+R</span>
                       </button>
                     </div>
                   </motion.div>

@@ -5,12 +5,12 @@ import { db, auth, collection, query, where, orderBy, onSnapshot, limit, getDoc,
 import { Project, MonetizationSettings, FooterSettings, AppConfig } from '../types';
 import { UserUsage } from '../services/usageService';
 import { ContactSection } from './ContactSection';
-import { AffiliateBanner } from './AffiliateBanner';
+import { AdSection } from './AdSection';
 import { Footer } from './Footer';
 import { useLanguage } from '../context/LanguageContext';
 
 interface HomeProps {
-  onNavigate: (screen: any, imageData?: string) => void;
+  onNavigate: (screen: any, imageData?: string, initialTool?: 'background' | 'templates' | 'stock' | 'ai_generate' | 'none') => void;
   selectedImage: string | null;
   userRole?: string;
   appConfig?: AppConfig;
@@ -117,7 +117,7 @@ export function Home({ onNavigate, selectedImage, userRole, appConfig, monetizat
       reader.onload = (e) => {
         clearTimeout(timeoutId);
         const imageData = e.target?.result as string;
-        console.log('Home: Imagem lida com sucesso (tamanho:', imageData.length, '), chamando onNavigate');
+        console.log('Home: Imagem lida com sucesso (tamanho:', imageData?.length || 0, '), chamando onNavigate');
         
         try {
           onNavigate('editor', imageData);
@@ -165,12 +165,14 @@ export function Home({ onNavigate, selectedImage, userRole, appConfig, monetizat
     }
   };
 
-  const handleToolClick = (screen: any) => {
-    console.log('Home: handleToolClick para:', screen);
+  const handleToolClick = (screen: any, tool?: 'background' | 'templates' | 'stock' | 'ai_generate' | 'none') => {
+    console.log('Home: handleToolClick para:', screen, 'com ferramenta:', tool);
     if (!selectedImage) {
+      // Set the intended tool to be used after upload
+      if (tool) onNavigate('editor', undefined, tool);
       handleUploadClick();
     } else {
-      onNavigate(screen);
+      onNavigate(screen, undefined, tool);
     }
   };
 
@@ -195,6 +197,8 @@ export function Home({ onNavigate, selectedImage, userRole, appConfig, monetizat
 
   return (
     <div className="max-w-6xl mx-auto space-y-16 py-12 px-6 md:px-12">
+      <AdSection placement="home" layout="top" monetization={monetization} />
+      
       {/* Hero Section */}
       <section className="flex flex-col md:flex-row items-center justify-between gap-12">
         <motion.div 
@@ -349,15 +353,6 @@ export function Home({ onNavigate, selectedImage, userRole, appConfig, monetizat
           </div>
         </div>
 
-        {/* Affiliate Banners in Home */}
-        {monetization && monetization.affiliateLinks.some(l => l.active) && (
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6 mb-12">
-            {monetization.affiliateLinks.filter(l => l.active).slice(0, 3).map((link) => (
-              <AffiliateBanner key={link.id} link={link} />
-            ))}
-          </div>
-        )}
-
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-8">
           <motion.div
             initial={{ opacity: 0, y: 20 }}
@@ -383,7 +378,7 @@ export function Home({ onNavigate, selectedImage, userRole, appConfig, monetizat
               icon={Layers} 
               title="Remover Fundo" 
               description="Remova fundos complexos instantaneamente usando IA gratuita diretamente no seu navegador."
-              onClick={() => handleToolClick('editor')}
+              onClick={() => handleToolClick('editor', 'background')}
               tag="Grátis & Ilimitado"
             />
           </motion.div>
@@ -395,7 +390,7 @@ export function Home({ onNavigate, selectedImage, userRole, appConfig, monetizat
           >
             <ToolCard 
               icon={Grid2X2} 
-              title="Super Colagem" 
+              title="Design Studio" 
               description="Crie composições livres ou automáticas com inteligência artificial."
               onClick={() => onNavigate('collage')}
               tag="IA + Manual"
@@ -411,7 +406,7 @@ export function Home({ onNavigate, selectedImage, userRole, appConfig, monetizat
               icon={Zap} 
               title="Design Templates" 
               description="Transforme suas fotos em designs profissionais para redes sociais."
-              onClick={() => handleToolClick('editor')}
+              onClick={() => handleToolClick('editor', 'templates')}
             />
           </motion.div>
           <motion.div
@@ -535,6 +530,9 @@ export function Home({ onNavigate, selectedImage, userRole, appConfig, monetizat
             <span className="text-sm font-bold text-slate-500">Novo Projeto</span>
           </motion.div>
         </div>
+
+        {/* Affiliate Banners in Home */}
+        <AdSection placement="home" layout="bottom" monetization={monetization} />
       </section>
 
       {/* Contact Section */}

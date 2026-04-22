@@ -1,13 +1,14 @@
 import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Cookie, X, ShieldCheck } from 'lucide-react';
+import { trackCookieConsent } from '../services/analyticsService';
 
 export function CookieConsent() {
   const [isVisible, setIsVisible] = useState(false);
 
   useEffect(() => {
     const consent = localStorage.getItem('designa_cookie_consent');
-    if (!consent) {
+    if (consent === null) {
       // Show after a short delay
       const timer = setTimeout(() => setIsVisible(true), 2000);
       return () => clearTimeout(timer);
@@ -16,11 +17,13 @@ export function CookieConsent() {
 
   const handleAccept = () => {
     localStorage.setItem('designa_cookie_consent', 'true');
+    trackCookieConsent(true);
     setIsVisible(false);
   };
 
   const handleDecline = () => {
     localStorage.setItem('designa_cookie_consent', 'false');
+    trackCookieConsent(false);
     setIsVisible(false);
   };
 

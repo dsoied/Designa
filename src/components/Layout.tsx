@@ -27,7 +27,7 @@ export function Sidebar({ activeScreen, onNavigate, isOpen, onClose, user, userD
   const { t } = useLanguage();
   const navItems = [
     { id: 'home', label: t('home'), icon: Home },
-    { id: 'collage', label: 'Foto Colagem', icon: Grid2X2 },
+    { id: 'collage', label: 'Design Studio', icon: Grid2X2 },
     { id: 'generate', label: 'Criar com IA', icon: Sparkles },
     { id: 'upload', label: 'Carregar Imagem', icon: Upload },
     { id: 'editor', label: 'Remover Fundo', icon: Layers },
@@ -193,7 +193,7 @@ export function TopBar({ activeScreen, onMenuClick, onNavigate, user, userData, 
     batch: 'Processamento em Lote',
     admin: t('admin'),
     generate: 'Criar com IA',
-    collage: 'Foto Colagem',
+    collage: 'Design Studio',
     terms: 'Termos e Condições',
     privacy: 'Política de Privacidade',
     profile: t('profile')

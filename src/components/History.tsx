@@ -3,7 +3,7 @@ import { useRef, ChangeEvent, useState, useEffect } from 'react';
 import { motion } from 'motion/react';
 import { Screen, Project, MonetizationSettings } from '../types';
 import { db, auth, collection, query, where, orderBy, onSnapshot, deleteDoc, doc } from '../firebase';
-import { AffiliateBanner } from './AffiliateBanner';
+import { AdSection } from './AdSection';
 import { AdUnit } from './AdUnit';
 
 interface HistoryProps {
@@ -71,7 +71,7 @@ export function History({ onNavigate, userRole, monetization }: HistoryProps) {
       const reader = new FileReader();
       reader.onload = (e) => {
         const imageData = e.target?.result as string;
-        console.log('History: Imagem lida com sucesso, tamanho:', imageData.length);
+        console.log('History: Imagem lida com sucesso, tamanho:', imageData?.length || 0);
         onNavigate('editor', imageData);
         setIsLoading(false);
       };
@@ -142,6 +142,8 @@ export function History({ onNavigate, userRole, monetization }: HistoryProps) {
         className="hidden" 
       />
       {/* Hero / Header Section */}
+      <AdSection placement="history" layout="top" monetization={monetization} />
+      
       <section className="mb-8 sm:mb-12">
         <h2 className="text-3xl sm:text-4xl font-extrabold tracking-tight text-slate-900 dark:text-white mb-2">Seu Histórico Criativo</h2>
         <p className="text-slate-500 dark:text-slate-400 max-w-2xl leading-relaxed text-sm sm:text-base">Gerencie todos os seus projetos passados, recupere edições e mantenha sua galeria organizada com nossos recursos de filtragem avançada.</p>
@@ -279,13 +281,7 @@ export function History({ onNavigate, userRole, monetization }: HistoryProps) {
       </div>
 
       {/* Affiliate Banners */}
-      {monetization && monetization.affiliateLinks.some(l => l.active) && (
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6 mt-12">
-          {monetization.affiliateLinks.filter(l => l.active).slice(0, 3).map((link) => (
-            <AffiliateBanner key={link.id} link={link} />
-          ))}
-        </div>
-      )}
+      <AdSection placement="history" layout="bottom" monetization={monetization} />
 
       {/* AdSense Unit */}
       <AdUnit monetization={monetization} className="max-w-4xl mx-auto" />

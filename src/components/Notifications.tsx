@@ -1,15 +1,17 @@
 import React from 'react';
 import { motion } from 'motion/react';
 import { Bell, CheckCircle2, Info, AlertCircle, Clock, Trash2, Settings, Check } from 'lucide-react';
-import { Notification } from '../types';
+import { Notification, MonetizationSettings } from '../types';
 import { db, updateDoc, deleteDoc, doc } from '../firebase';
+import { AdSection } from './AdSection';
 
 interface NotificationsProps {
   notifications: Notification[];
   setNotifications: React.Dispatch<React.SetStateAction<Notification[]>>;
+  monetization?: MonetizationSettings | null;
 }
 
-export function Notifications({ notifications, setNotifications }: NotificationsProps) {
+export function Notifications({ notifications, setNotifications, monetization }: NotificationsProps) {
   const markAllAsRead = async () => {
     const unread = notifications.filter(n => !n.isRead);
     try {
@@ -45,6 +47,8 @@ export function Notifications({ notifications, setNotifications }: Notifications
 
   return (
     <div className="max-w-4xl mx-auto py-8 px-6 space-y-8">
+      <AdSection placement="notifications" layout="top" monetization={monetization} />
+      
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
         <div>
           <h2 className="text-3xl font-black text-slate-900 dark:text-white tracking-tight">Notificações</h2>
@@ -138,6 +142,8 @@ export function Notifications({ notifications, setNotifications }: Notifications
           </div>
         )}
       </div>
+
+      <AdSection placement="notifications" layout="bottom" monetization={monetization} />
     </div>
   );
 }

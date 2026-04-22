@@ -280,7 +280,7 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    console.log('App: selectedImage mudou para:', selectedImage ? 'imagem presente (tamanho: ' + selectedImage.length + ')' : 'null');
+    console.log('App: selectedImage mudou para:', selectedImage ? 'imagem presente (tamanho: ' + (typeof selectedImage === 'string' ? selectedImage.length : 'N/A') + ')' : 'null');
   }, [selectedImage]);
 
   useEffect(() => {
@@ -299,6 +299,15 @@ export default function App() {
 
   const handleNavigate = (screen: Screen, imageData?: string, tool?: 'background' | 'templates' | 'stock' | 'ai_generate' | 'none') => {
     console.log(`App: Navegando para ${screen}. Imagem fornecida: ${imageData ? 'Sim' : 'Não'}, Ferramenta: ${tool || 'Padrão'}`);
+    
+    // Auth Guard: Require login for all screens except public ones
+    const publicScreens: Screen[] = ['home', 'signup', 'terms', 'privacy'];
+    if (!auth.currentUser && !publicScreens.includes(screen)) {
+      setActiveScreen('signup');
+      notify('Por favor, faça login ou cadastre-se para acessar esta área.', 'warning');
+      return;
+    }
+
     if (imageData) {
       console.log('App: Atualizando selectedImage com novos dados');
       setSelectedImage(imageData);
@@ -344,6 +353,7 @@ export default function App() {
             }}
             initialTool={initialEditorTool} 
             userRole={userRole} 
+            monetization={monetization}
             notify={notify} 
           />
         );
@@ -354,12 +364,13 @@ export default function App() {
       case 'settings':
         return <Settings user={user} userData={userData} userRole={userRole} appConfig={appConfig} onNotify={notify} theme={theme} onToggleTheme={toggleTheme} />;
       case 'signup':
-        return <SignUp onNavigate={handleNavigate} appConfig={appConfig} />;
+        return <SignUp onNavigate={handleNavigate} appConfig={appConfig} monetization={monetization} />;
       case 'notifications':
         return (
           <Notifications 
             notifications={notifications} 
             setNotifications={setNotifications} 
+            monetization={monetization}
           />
         );
       case 'batch':
@@ -367,16 +378,17 @@ export default function App() {
           <BatchProcessor 
             userRole={userRole} 
             onNavigate={handleNavigate}
+            monetization={monetization}
           />
         );
       case 'admin':
         return userRole === 'admin' ? <AdminDashboard /> : <Home onNavigate={handleNavigate} selectedImage={selectedImage} userRole={userRole} />;
       case 'generate':
-        return <AIGenerator userRole={userRole} onNavigate={handleNavigate} />;
+        return <AIGenerator userRole={userRole} onNavigate={handleNavigate} monetization={monetization} />;
       case 'collage':
         return <CollageMaker onNavigate={handleNavigate} notify={notify} />;
       case 'profile':
-        return <UserProfile onNavigate={handleNavigate} userRole={userRole} />;
+        return <UserProfile onNavigate={handleNavigate} userRole={userRole} monetization={monetization} />;
       case 'terms':
         return <LegalPage type="terms" onNavigate={handleNavigate} appName={appConfig.appName} />;
       case 'privacy':
@@ -423,20 +435,22 @@ export default function App() {
         theme={theme}
         onToggleTheme={toggleTheme}
       />
-      <TopBar 
-        activeScreen={activeScreen} 
-        onMenuClick={() => setIsSidebarOpen(true)}
-        onNavigate={handleNavigate}
-        user={user}
-        userData={userData}
-        userRole={userRole}
-        hasUnreadNotifications={hasUnreadNotifications}
-        appConfig={appConfig}
-        theme={theme}
-        onToggleTheme={toggleTheme}
-      />
+      {activeScreen !== 'collage' && (
+        <TopBar 
+          activeScreen={activeScreen} 
+          onMenuClick={() => setIsSidebarOpen(true)}
+          onNavigate={handleNavigate}
+          user={user}
+          userData={userData}
+          userRole={userRole}
+          hasUnreadNotifications={hasUnreadNotifications}
+          appConfig={appConfig}
+          theme={theme}
+          onToggleTheme={toggleTheme}
+        />
+      )}
       
-      <main className="lg:pl-64 pt-16 min-h-screen">
+      <main className={`lg:pl-64 ${activeScreen === 'collage' ? 'pt-0' : 'pt-16'} min-h-screen bg-white dark:bg-slate-950`}>
         <AnimatePresence mode="wait">
           <motion.div
             key={activeScreen === 'upload' ? 'home' : activeScreen}

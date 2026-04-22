@@ -222,6 +222,55 @@ export const resetPassword = async (email: string) => {
   }
 };
 
+export const uploadFileToStorage = async (file: File | Blob, fileName: string, path: string): Promise<string> => {
+  if (!auth.currentUser) throw new Error("Usuário não autenticado");
+  
+  // PRIMARY: Try Supabase first if configured
+  const supabase = await getSupabaseClient();
+  const supabaseBucket = supabaseBucketName;
+  
+  if (supabase) {
+    try {
+      console.log(`Supabase: Iniciando upload direto para bucket '${supabaseBucket}' como ${path}/${fileName}`);
+      const fullPath = `${path}/${fileName}`.replace(/^\/+/, '');
+
+      const { data, error } = await supabase.storage
+        .from(supabaseBucket)
+        .upload(fullPath, file, {
+          contentType: file.type || 'application/octet-stream',
+          upsert: true
+        });
+
+      if (error) {
+        if (error.message.includes('bucket not found')) throw new Error('BUCKET_NOT_FOUND');
+        throw error;
+      }
+
+      const { data: { publicUrl } } = supabase.storage
+        .from(supabaseBucket)
+        .getPublicUrl(fullPath);
+
+      return publicUrl;
+    } catch (error) {
+      console.error('Supabase: Erro no upload direto:', error);
+    }
+  }
+
+  // SECONDARY: Firebase Storage fallback
+  if (firebaseConfig.storageBucket) {
+    try {
+      const storageRef = ref(storage, `${path}/${fileName}`);
+      const { uploadBytes } = await import('firebase/storage');
+      await uploadBytes(storageRef, file);
+      return await getDownloadURL(storageRef);
+    } catch (error: any) {
+      console.error('Firebase: Erro no upload direto:', error);
+    }
+  }
+
+  throw new Error("Não foi possível realizar o upload direto para o storage.");
+};
+
 export const uploadImageToStorage = async (base64Data: string, fileName: string, path: string): Promise<string> => {
   if (!auth.currentUser) throw new Error("Usuário não autenticado");
   

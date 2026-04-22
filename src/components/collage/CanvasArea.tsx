@@ -15,19 +15,21 @@ interface CanvasAreaProps {
   stageRef: React.RefObject<any>;
   onContextMenu?: (e: any) => void;
   onMouseDown?: (e: any) => void;
+  zoom?: number;
 }
 
-export const CanvasArea = ({ elements, config, selectedIds, dimensions, onSelect, onUpdate, stageRef, editingId, onContextMenu, onMouseDown }: CanvasAreaProps) => {
+export const CanvasArea = ({ elements, config, selectedIds, dimensions, onSelect, onUpdate, stageRef, editingId, onContextMenu, onMouseDown, zoom = 1 }: CanvasAreaProps) => {
   const trRef = useRef<any>(null);
   const [selectionRect, setSelectionRect] = useState({ x1: 0, y1: 0, x2: 0, y2: 0, visible: false });
   const dragStartPos = useRef<Record<string, { x: number, y: number }>>({});
   const nodeStartPos = useRef<Record<string, { x: number, y: number }>>({});
 
   // Design scaling and centering logic
-  const scale = Math.min(
+  const baseScale = Math.min(
     (dimensions.width - 40) / (config.width || 1080),
     (dimensions.height - 40) / (config.height || 1080)
   );
+  const scale = baseScale * zoom;
   const stageX = (dimensions.width - (config.width || 1080) * scale) / 2;
   const stageY = (dimensions.height - (config.height || 1080) * scale) / 2;
 
@@ -638,19 +640,21 @@ export const CanvasArea = ({ elements, config, selectedIds, dimensions, onSelect
 
         <Transformer
           ref={trRef}
-          anchorSize={7}
-          anchorCornerRadius={1}
+          anchorSize={6 / scale}
+          anchorCornerRadius={1 / scale}
           anchorStroke="#6366f1"
           anchorFill="#ffffff"
+          anchorStrokeWidth={1 / scale}
           borderStroke="#6366f1"
-          borderStrokeWidth={1.5}
-          rotateAnchorOffset={20}
-          keepRatio={true}
-          enabledAnchors={['top-left', 'top-right', 'bottom-left', 'bottom-right', 'middle-left', 'middle-right']}
+          borderStrokeWidth={1 / scale}
+          rotateAnchorOffset={20 / scale}
+          keepRatio={false}
+          enabledAnchors={['top-left', 'top-center', 'top-right', 'middle-right', 'middle-left', 'bottom-left', 'bottom-center', 'bottom-right']}
           boundBoxFunc={(oldBox, newBox) => {
-            if (Math.abs(newBox.width) < 10 || Math.abs(newBox.height) < 10) return oldBox;
+            if (Math.abs(newBox.width) < 5 || Math.abs(newBox.height) < 5) return oldBox;
             return newBox;
           }}
+          padding={0}
         />
       </Layer>
     </Stage>

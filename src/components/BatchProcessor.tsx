@@ -19,12 +19,16 @@ import {
 } from 'lucide-react';
 import { useBatch } from '../context/BatchContext';
 
+import { Screen, MonetizationSettings } from '../types';
+import { AdSection } from './AdSection';
+
 interface BatchProcessorProps {
   userRole?: string;
   onNavigate: (screen: any) => void;
+  monetization?: MonetizationSettings | null;
 }
 
-export function BatchProcessor({ userRole, onNavigate }: BatchProcessorProps) {
+export function BatchProcessor({ userRole, onNavigate, monetization }: BatchProcessorProps) {
   const { 
     files, 
     isProcessing, 
@@ -76,6 +80,8 @@ export function BatchProcessor({ userRole, onNavigate }: BatchProcessorProps) {
 
   return (
     <div className="max-w-6xl mx-auto p-6 sm:p-12 space-y-12">
+      <AdSection placement="batch" layout="top" monetization={monetization} />
+      
       <header className="flex flex-col md:flex-row md:items-end justify-between gap-6">
         <div className="space-y-2">
           <h2 className="text-4xl font-black tracking-tight text-slate-900 dark:text-white">Processamento em Lote</h2>
@@ -160,6 +166,8 @@ export function BatchProcessor({ userRole, onNavigate }: BatchProcessorProps) {
               </div>
             </div>
           </section>
+
+          <AdSection placement="batch" layout="sidebar" monetization={monetization} maxAds={2} />
         </aside>
 
         {/* Main: File Grid */}
@@ -276,6 +284,8 @@ export function BatchProcessor({ userRole, onNavigate }: BatchProcessorProps) {
           )}
         </main>
       </div>
+
+      <AdSection placement="batch" layout="bottom" monetization={monetization} />
     </div>
   );
 }

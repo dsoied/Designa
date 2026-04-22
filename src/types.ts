@@ -32,6 +32,9 @@ export interface AffiliateLink {
   imageUrl: string;
   videoUrl?: string;
   type: 'image' | 'video';
+  placement: 'home' | 'bg-remover' | 'tools' | 'batch' | 'signup' | 'profile' | 'notifications' | 'history' | 'generate' | 'all' | 'hap-grandi';
+  layout: 'top' | 'bottom' | 'sidebar' | 'horizontal' | 'vertical';
+  ratio: 'square' | 'vertical' | 'horizontal';
   active: boolean;
 }
 

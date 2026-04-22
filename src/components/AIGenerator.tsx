@@ -16,23 +16,28 @@ import {
   X,
   Trash2,
   Loader2,
-  Film
+  Film,
+  Shield
 } from 'lucide-react';
 import { db, auth, addDoc, collection, serverTimestamp, uploadImageToStorage, getDocs, query, where, orderBy, limit, deleteDoc, doc, handleFirestoreError, OperationType, getDoc } from '../firebase';
 import { usageService } from '../services/usageService';
 import { generateImage, refinePrompt, refinePromptOptions } from '../services/geminiService';
+import { MonetizationSettings } from '../types';
+import { AdSection } from './AdSection';
 
 interface AIGeneratorProps {
   userRole?: string;
   onNavigate?: (screen: any, imageData?: string) => void;
+  monetization?: MonetizationSettings | null;
 }
 
-export default function AIGenerator({ userRole, onNavigate }: AIGeneratorProps) {
+export default function AIGenerator({ userRole, onNavigate, monetization }: AIGeneratorProps) {
   const [prompt, setPrompt] = useState('');
   const [negativePrompt, setNegativePrompt] = useState('');
   const [aspectRatio, setAspectRatio] = useState<'1:1' | '16:9' | '9:16' | '4:3'>('1:1');
   const [style, setStyle] = useState('none');
-  const [selectedModel, setSelectedModel] = useState('flux');
+  const [selectedModel, setSelectedModel] = useState('gemini-3.1-flash-image-preview');
+  const [imageQuality, setImageQuality] = useState<"512px" | "1K" | "2K" | "4K">('1K');
   const [isGenerating, setIsGenerating] = useState(false);
   const [showSuccess, setShowSuccess] = useState(false);
   const [generatedImage, setGeneratedImage] = useState<string | null>(null);
@@ -116,10 +121,11 @@ export default function AIGenerator({ userRole, onNavigate }: AIGeneratorProps) 
   ];
 
   const aiModels = [
-    { id: 'gemini-2.5-flash', name: 'Gemini 2.5 Flash', description: 'Alta velocidade e qualidade artística (Google)', provider: 'google', icon: <Sparkles size={14} className="text-blue-500" /> },
-    { id: 'gemini-3-flash', name: 'Gemini 3 Pro', description: 'Realismo extremo e detalhes precisos', provider: 'google', icon: <Sparkles size={14} className="text-indigo-500" /> },
-    { id: 'flux', name: 'Flux Pro (Pollinations)', description: 'Qualidade fotográfica superior', provider: 'pollinations', icon: <Sparkles size={14} className="text-purple-500" /> },
-    { id: 'turbo', name: 'Turbo (Pollinations)', description: 'Geração ultra rápida', provider: 'pollinations', icon: <Zap size={14} className="text-amber-500" /> },
+    { id: 'gemini-3.1-flash-image-preview', name: 'Gemini 3.1 Ultra (Recomendado)', description: 'Alta resolução, cores vibrantes e detalhes 4K.', provider: 'google', icon: <Sparkles size={14} className="text-indigo-600" /> },
+    { id: 'gemini-3-pro-image-preview', name: 'Gemini 3 Pro Expert', description: 'O modelo mais inteligente para composições complexas.', provider: 'google', icon: <Shield size={14} className="text-amber-500" /> },
+    { id: 'imagen-4.0-generate-001', name: 'Imagen 4 Extreme Beauty', description: 'Beleza fotográfica extrema e realismo artístico.', provider: 'google', icon: <Palette size={14} className="text-purple-600" /> },
+    { id: 'gemini-2.5-flash-image', name: 'Gemini 2.5 Speed', description: 'Geração ultra rápida com boa qualidade.', provider: 'google', icon: <Zap size={14} className="text-blue-500" /> },
+    { id: 'flux', name: 'Flux (Externo - Pollinations)', description: 'Geração alternativa em caso de instabilidade.', provider: 'pollinations', icon: <Layers size={14} className="text-slate-500" /> },
   ];
 
   const handleGenerate = async () => {
@@ -140,8 +146,13 @@ export default function AIGenerator({ userRole, onNavigate }: AIGeneratorProps) 
       let finalImageUrl = '';
 
       if (provider === 'google') {
-        console.log(`AIGenerator: Usando Gemini para gerar imagem...`);
-        finalImageUrl = await generateImage(prompt, aspectRatio === '1:1' ? '1:1' : aspectRatio === '16:9' ? '16:9' : '1:1');
+        console.log(`AIGenerator: Usando Gemini (${selectedModel}) para gerar imagem com qualidade ${imageQuality}...`);
+        finalImageUrl = await generateImage(
+          prompt, 
+          aspectRatio,
+          selectedModel,
+          imageQuality
+        );
       } else if (provider === 'pollinations') {
         console.log(`AIGenerator: Usando Pollinations (${selectedModel})...`);
         const width = aspectRatio === '16:9' ? 1280 : aspectRatio === '9:16' ? 720 : 1024;
@@ -227,7 +238,9 @@ export default function AIGenerator({ userRole, onNavigate }: AIGeneratorProps) 
   };
 
   return (
-    <div className="p-4 sm:p-8 lg:p-12 max-w-7xl mx-auto min-h-screen">
+    <div className="p-4 sm:p-8 lg:p-12 max-w-7xl mx-auto min-h-screen space-y-12">
+      <AdSection placement="generate" layout="top" monetization={monetization} />
+      
       <div className="flex flex-col lg:flex-row gap-8 lg:gap-16">
         {/* Left: Controls */}
         <div className="w-full lg:w-1/3 space-y-8">
@@ -395,6 +408,28 @@ export default function AIGenerator({ userRole, onNavigate }: AIGeneratorProps) 
                 ))}
               </div>
             </div>
+
+            {/* Quality Selector - Only for Gemini 3 and Pro */}
+            {(selectedModel.includes('3') || selectedModel.includes('pro')) && (
+              <div className="space-y-3">
+                <label className="text-xs font-black text-slate-400 dark:text-slate-500 uppercase tracking-[0.2em]">Capacidade / Resolução</label>
+                <div className="flex flex-wrap gap-2">
+                  {(['512px', '1K', '2K', '4K'] as const).map((q) => (
+                    <button
+                      key={q}
+                      onClick={() => setImageQuality(q)}
+                      className={`flex-1 min-w-[60px] py-2 rounded-xl border text-[10px] font-black transition-all ${
+                        imageQuality === q 
+                          ? 'bg-indigo-600 text-white border-indigo-600 shadow-md' 
+                          : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 text-slate-500 hover:border-indigo-400'
+                      }`}
+                    >
+                      {q}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
 
             <motion.button
               whileHover={{ scale: 1.02 }}
@@ -727,6 +762,8 @@ export default function AIGenerator({ userRole, onNavigate }: AIGeneratorProps) 
           </div>
         )}
       </AnimatePresence>
+
+      <AdSection placement="generate" layout="bottom" monetization={monetization} />
     </div>
   );
 }

@@ -18,7 +18,7 @@ import {
 } from 'lucide-react';
 import { motion } from 'motion/react';
 import { Screen, MonetizationSettings } from '../types';
-import { AffiliateBanner } from './AffiliateBanner';
+import { AdSection } from './AdSection';
 import { AdUnit } from './AdUnit';
 
 interface ToolsProps {
@@ -166,7 +166,9 @@ export function Tools({ onNavigate, selectedImage, monetization, userRole }: Too
         onChange={handleFileChange}
       />
       <div className="mb-12">
-        <span className="text-xs uppercase tracking-[0.3em] font-bold text-indigo-600 mb-2 block">Catálogo Completo</span>
+        <AdSection placement="tools" layout="top" monetization={monetization} />
+        
+        <span className="text-xs uppercase tracking-[0.3em] font-bold text-indigo-600 mb-2 block mt-8">Catálogo Completo</span>
         <h1 className="font-headline text-4xl sm:text-5xl font-black text-slate-900 dark:text-white mb-4">
           Nossos <span className="text-indigo-600">Recursos</span>
         </h1>
@@ -220,15 +222,9 @@ export function Tools({ onNavigate, selectedImage, monetization, userRole }: Too
           );
         })}
       </div>
-
+      
       {/* Affiliate Banners */}
-      {monetization && monetization.affiliateLinks.some(l => l.active) && (
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 mt-12">
-          {monetization.affiliateLinks.filter(l => l.active).slice(0, 4).map((link) => (
-            <AffiliateBanner key={link.id} link={link} aspectRatio="aspect-[16/9]" />
-          ))}
-        </div>
-      )}
+      <AdSection placement="tools" layout="bottom" monetization={monetization} />
 
       {/* AdSense Unit */}
       <AdUnit monetization={monetization} className="max-w-4xl mx-auto mt-12" />

@@ -17,29 +17,61 @@ export const getGeminiClient = () => {
 /**
  * Generates an image based on a prompt using Gemini.
  */
-export const generateImage = async (prompt: string, aspectRatio: "1:1" | "4:3" | "16:9" = "1:1") => {
+export const generateImage = async (
+  prompt: string, 
+  aspectRatio: "1:1" | "3:4" | "4:3" | "9:16" | "16:9" = "1:1",
+  model: string = "gemini-2.5-flash-image",
+  quality: "512px" | "1K" | "2K" | "4K" = "1K"
+) => {
   const client = getGeminiClient();
   
   try {
-    const response = await client.models.generateContent({
-      model: "gemini-2.5-flash-image",
-      contents: [{ parts: [{ text: prompt }] }],
-      config: {
+    const isNanoBanana = model.includes("image");
+    
+    if (isNanoBanana) {
+      const config: any = {
         imageConfig: {
-          aspectRatio: aspectRatio,
+          aspectRatio,
+        }
+      };
+
+      // imageSize is only for Pro and Flash Image models (not 2.5 flash image usually, but let's check skill)
+      // Skill says gemini-3.1-flash-image-preview and gemini-3-pro-image-preview support it.
+      if (model.includes("3") || model.includes("pro")) {
+        config.imageConfig.imageSize = quality;
+      }
+
+      const response = await client.models.generateContent({
+        model,
+        contents: [{ parts: [{ text: prompt }] }],
+        config
+      });
+
+      if (!response.candidates?.[0]?.content?.parts) {
+        throw new Error("No candidates returned from Gemini image generation.");
+      }
+
+      for (const part of response.candidates[0].content.parts) {
+        if (part.inlineData) {
+          const base64Data = part.inlineData.data;
+          return `data:${part.inlineData.mimeType};base64,${base64Data}`;
         }
       }
-    });
+    } else if (model.includes("imagen")) {
+      // Imagen models use generateImages
+      const response = await client.models.generateImages({
+        model,
+        prompt,
+        config: {
+          numberOfImages: 1,
+          aspectRatio,
+          // outputMimeType: 'image/jpeg',
+        },
+      });
 
-    if (!response.candidates?.[0]?.content?.parts) {
-      throw new Error("No candidates returned from Gemini image generation.");
-    }
-
-    // Find the image part
-    for (const part of response.candidates[0].content.parts) {
-      if (part.inlineData) {
-        const base64Data = part.inlineData.data;
-        return `data:${part.inlineData.mimeType};base64,${base64Data}`;
+      if (response.generatedImages?.[0]?.image?.imageBytes) {
+        const base64Data = response.generatedImages[0].image.imageBytes;
+        return `data:image/png;base64,${base64Data}`;
       }
     }
 

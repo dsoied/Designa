@@ -19,7 +19,7 @@ export function Footer({ appConfig, settings, onNavigate }: FooterProps) {
   // Default values if no settings are provided
   const defaultSettings: FooterSettings = {
     adminEmail: "dissooquevemdepois@gmail.com",
-    contactPhone: "+55 (11) 99999-9999",
+    contactPhone: "",
     websiteUrl: "www.designa.ai",
     instagramUrl: "#",
     twitterUrl: "#",
@@ -95,14 +95,6 @@ export function Footer({ appConfig, settings, onNavigate }: FooterProps) {
               </div>
               <a href={`mailto:${s.adminEmail}`} className="text-sm text-slate-500 dark:text-slate-400 font-medium hover:text-indigo-600 transition-colors">
                 {s.adminEmail}
-              </a>
-            </li>
-            <li className="flex items-center gap-3 group">
-              <div className="w-8 h-8 rounded-lg bg-indigo-50 dark:bg-indigo-900/30 text-indigo-600 flex items-center justify-center group-hover:bg-indigo-600 group-hover:text-white transition-colors">
-                <Phone size={16} />
-              </div>
-              <a href={`tel:${s.contactPhone.replace(/\D/g, '')}`} className="text-sm text-slate-500 dark:text-slate-400 font-medium hover:text-indigo-600 transition-colors">
-                {s.contactPhone}
               </a>
             </li>
             <li className="flex items-center gap-3 group">

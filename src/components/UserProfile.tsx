@@ -21,9 +21,13 @@ import {
 import { auth, db, logout, updateDoc, doc, onSnapshot, handleFirestoreError, OperationType, uploadImageToStorage, updateProfile } from '../firebase';
 import { useLanguage } from '../context/LanguageContext';
 
+import { MonetizationSettings } from '../types';
+import { AdSection } from './AdSection';
+
 interface UserProfileProps {
   onNavigate: (screen: any) => void;
   userRole?: string;
+  monetization?: MonetizationSettings | null;
 }
 
 interface UserData {
@@ -35,7 +39,7 @@ interface UserData {
   planSelected?: boolean;
 }
 
-export function UserProfile({ onNavigate, userRole }: UserProfileProps) {
+export function UserProfile({ onNavigate, userRole, monetization }: UserProfileProps) {
   const { t, language } = useLanguage();
   const [userData, setUserData] = useState<UserData | null>(null);
   const [isEditing, setIsEditing] = useState(false);
@@ -186,6 +190,8 @@ export function UserProfile({ onNavigate, userRole }: UserProfileProps) {
 
   return (
     <div className="max-w-4xl mx-auto p-6 sm:p-12 space-y-12">
+      <AdSection placement="profile" layout="top" monetization={monetization} />
+      
       <header className="flex flex-col md:flex-row items-center gap-8">
         <div className="relative group">
           <div className="w-32 h-32 rounded-[2.5rem] overflow-hidden border-4 border-white dark:border-slate-800 shadow-xl bg-slate-100 dark:bg-slate-800 flex items-center justify-center">
@@ -379,6 +385,8 @@ export function UserProfile({ onNavigate, userRole }: UserProfileProps) {
           </div>
         </div>
       </section>
+
+      <AdSection placement="profile" layout="bottom" monetization={monetization} />
     </div>
   );
 }

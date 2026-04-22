@@ -13,18 +13,28 @@ interface AffiliateBannerProps {
 
 export const AffiliateBanner: React.FC<AffiliateBannerProps> = ({ 
   link, 
-  aspectRatio = "aspect-[21/9]", 
+  aspectRatio, 
   className = "", 
   showBadge = true,
   badgeText = "Parceiro"
 }) => {
+  const getRatioClass = () => {
+    if (aspectRatio) return aspectRatio;
+    switch (link.ratio) {
+      case 'horizontal': return 'aspect-video';
+      case 'vertical': return 'aspect-[3/4]';
+      case 'square': return 'aspect-square';
+      default: return 'aspect-[21/9]';
+    }
+  };
+
   return (
     <motion.a
       href={link.url.startsWith('http') ? link.url : `https://${link.url}`}
       target="_blank"
       rel="noopener noreferrer"
       whileHover={{ y: -5, scale: 1.02 }}
-      className={`relative group rounded-3xl overflow-hidden border border-slate-200 dark:border-slate-800 shadow-sm ${aspectRatio} ${className}`}
+      className={`relative group rounded-3xl overflow-hidden border border-slate-200 dark:border-slate-800 shadow-sm ${getRatioClass()} ${className}`}
     >
       {link.type === 'video' && link.videoUrl ? (
         <video 

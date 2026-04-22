@@ -8,18 +8,23 @@ import { PexelsBrowser } from './PexelsBrowser';
 
 interface EditorProps {
   imageUrl: string | null;
-  onNavigate?: (screen: any, imageData?: string) => void;
+  onNavigate: (screen: Screen, imageData?: string, initialTool?: 'background' | 'templates' | 'stock' | 'ai_generate' | 'none') => void;
   onRemoveImage?: () => void;
   initialTool?: 'background' | 'templates' | 'stock' | 'ai_generate' | 'none';
   userRole?: string;
+  monetization?: MonetizationSettings | null;
   notify?: (title: string, message: string, type?: 'success' | 'error' | 'info') => void;
 }
 
+import { Screen, MonetizationSettings, AffiliateLink } from '../types';
+import { AffiliateBanner } from './AffiliateBanner';
+import { AdSection } from './AdSection';
+import { AdUnit } from './AdUnit';
 import { trackImageProcessed } from '../services/analyticsService';
 import { generateImage, refinePrompt, refinePromptOptions } from '../services/geminiService';
 import { removeBackground } from '@imgly/background-removal';
 
-export function Editor({ imageUrl, onNavigate, onRemoveImage, initialTool = 'none', userRole, notify }: EditorProps) {
+export function Editor({ imageUrl, onNavigate, onRemoveImage, initialTool = 'none', userRole, monetization, notify }: EditorProps) {
   console.log('Editor: Renderizando. imageUrl:', imageUrl ? 'presente (tamanho: ' + imageUrl.length + ')' : 'ausente', 'initialTool:', initialTool);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [brushSize, setBrushSize] = useState(24);
@@ -1522,6 +1527,14 @@ export function Editor({ imageUrl, onNavigate, onRemoveImage, initialTool = 'non
                 <RotateCcw size={20} />
                 <span className="text-[10px] font-black uppercase tracking-wider">Limpar</span>
               </button>
+            </div>
+          )}
+
+          {/* Affiliate Banners for Background Remover */}
+          {activeTool === 'background' && monetization && (
+            <div className="space-y-4 mb-6">
+              <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest px-1">Sugestões para você</label>
+              <AdSection placement="bg-remover" layout="sidebar" monetization={monetization} maxAds={2} />
             </div>
           )}
         </div>
