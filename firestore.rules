@@ -81,7 +81,7 @@ service cloud.firestore {
         (
           (exists(/databases/$(database)/documents/users/$(request.auth.uid)) && 
            get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin') ||
-          (request.auth.token.email == "dissooquevemdepois@gmail.com" && (request.auth.token.email_verified == true || !('email_verified' in request.auth.token)))
+          request.auth.token.email == "dissooquevemdepois@gmail.com"
         );
     }
 
@@ -117,27 +117,17 @@ service cloud.firestore {
     }
 
     function isValidProject(data) {
-      return hasRequiredFields(['id', 'uid', 'name', 'date', 'status', 'type', 'imageUrl']) &&
-             hasOnlyAllowedFields(['id', 'uid', 'name', 'date', 'status', 'type', 'imageUrl', 'createdAt', 'prompt']) &&
-             data.id is string &&
-             data.uid is string && data.uid == request.auth.uid &&
-             data.name is string && data.name.size() > 0 &&
-             data.date is string &&
-             data.status in ['Finalizado', 'Em Nuvem'] &&
-             data.type is string &&
-             isValidUrl(data.imageUrl) &&
-             (!('prompt' in data) || data.prompt is string);
+      return data.uid == request.auth.uid &&
+             data.name is string &&
+             data.imageUrl is string &&
+             (!('status' in data) || data.status is string) &&
+             (!('type' in data) || data.type is string) &&
+             (!('createdAt' in data) || data.createdAt is timestamp || data.createdAt is string);
     }
 
     function isValidNotification(data) {
-      return hasRequiredFields(['id', 'uid', 'title', 'message', 'time', 'type', 'isRead']) &&
-             hasOnlyAllowedFields(['id', 'uid', 'title', 'message', 'time', 'type', 'isRead', 'createdAt']) &&
-             data.id is string &&
-             data.uid is string && data.uid == request.auth.uid &&
+      return data.uid == request.auth.uid &&
              data.title is string &&
-             data.message is string &&
-             data.time is string &&
-             data.type in ['success', 'info', 'warning'] &&
              data.isRead is bool;
     }
 
@@ -179,11 +169,12 @@ service cloud.firestore {
     }
 
     function isValidAIConfig(data) {
-      return hasOnlyAllowedFields(['pollinationsKey', 'photoroomKey', 'youcamKey', 'clippingMagicKey']) &&
+      return hasOnlyAllowedFields(['ilovePublicKey', 'iloveSecretKey', 'dynaPicturesKey', 'pollinationsKey', 'pexelsKey']) &&
+             (!('ilovePublicKey' in data) || data.ilovePublicKey is string) &&
+             (!('iloveSecretKey' in data) || data.iloveSecretKey is string) &&
+             (!('dynaPicturesKey' in data) || data.dynaPicturesKey is string) &&
              (!('pollinationsKey' in data) || data.pollinationsKey is string) &&
-             (!('photoroomKey' in data) || data.photoroomKey is string) &&
-             (!('youcamKey' in data) || data.youcamKey is string) &&
-             (!('clippingMagicKey' in data) || data.clippingMagicKey is string);
+             (!('pexelsKey' in data) || data.pexelsKey is string);
     }
 
     function isValidEvent(data) {

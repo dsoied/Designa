@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { CloudUpload, ArrowRight, ChevronRight, Layers, Eraser, Sparkles, ExternalLink, Plus, Crown, Zap, DollarSign, Wand2, Maximize2, RefreshCw, Library } from 'lucide-react';
+import { CloudUpload, ArrowRight, ChevronRight, Layers, Eraser, Sparkles, ExternalLink, Plus, Crown, Zap, DollarSign, Wand2, Maximize2, RefreshCw, Library, Grid2X2, MousePointer2 } from 'lucide-react';
 import { motion } from 'motion/react';
 import { db, auth, collection, query, where, orderBy, onSnapshot, limit, getDoc, doc, handleFirestoreError, OperationType } from '../firebase';
 import { Project, MonetizationSettings, FooterSettings, AppConfig } from '../types';
@@ -382,9 +382,23 @@ export function Home({ onNavigate, selectedImage, userRole, appConfig, monetizat
             <ToolCard 
               icon={Layers} 
               title="Remover Fundo" 
-              description="Remova fundos complexos instantaneamente com precisão cirúrgica."
+              description="Remova fundos complexos instantaneamente usando IA gratuita diretamente no seu navegador."
               onClick={() => handleToolClick('editor')}
-              tag="Destaque"
+              tag="Grátis & Ilimitado"
+            />
+          </motion.div>
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            whileInView={{ opacity: 1, y: 0 }}
+            viewport={{ once: true }}
+            transition={{ delay: 0.2 }}
+          >
+            <ToolCard 
+              icon={Grid2X2} 
+              title="Super Colagem" 
+              description="Crie composições livres ou automáticas com inteligência artificial."
+              onClick={() => onNavigate('collage')}
+              tag="IA + Manual"
             />
           </motion.div>
           <motion.div

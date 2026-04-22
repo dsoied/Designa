@@ -34,10 +34,10 @@ async function startServer() {
   });
 
 
-  // Clipping Magic & iLoveIMG API Proxy
+  // iLoveIMG API Proxy
   app.post("/api/remove-background", async (req, res) => {
     try {
-      const { image, test, engine = 'clippingmagic' } = req.body; // base64 image or URL
+      const { image, engine = 'iloveimg' } = req.body; // base64 image or URL
       
       if (!image) {
         return res.status(400).json({ error: "Nenhuma imagem fornecida." });
@@ -45,46 +45,9 @@ async function startServer() {
 
       const buffer = await getImageBuffer(image);
 
-      if (engine === 'clippingmagic') {
-        const apiId = process.env.CLIPPING_MAGIC_API_ID;
-        const apiSecret = process.env.CLIPPING_MAGIC_API_SECRET;
-
-        if (!apiId || !apiSecret) {
-          console.error("Server: CLIPPING_MAGIC_API_ID ou SECRET não configurados.");
-          return res.status(500).json({ error: "Configuração do Clipping Magic incompleta no servidor." });
-        }
-
-        console.log(`Server: Removendo fundo com Clipping Magic... (Teste: ${test !== false})`);
-
-        const formData = new FormData();
-        formData.append('image', new Blob([buffer], { type: 'image/png' }), 'image.png');
-        formData.append('test', test !== false ? 'true' : 'false');
-
-        const response = await fetch("https://clippingmagic.com/api/v1/images", {
-          method: "POST",
-          headers: {
-            "Authorization": "Basic " + Buffer.from(apiId + ":" + apiSecret).toString('base64'),
-          },
-          body: formData
-        });
-
-        if (!response.ok) {
-          const errorText = await response.text();
-          console.error(`Server: Erro do Clipping Magic API (${response.status}):`, errorText);
-          if (response.status === 402) {
-             return res.status(402).json({ error: "Créditos de produção insuficientes no Clipping Magic." });
-          }
-          throw new Error(`Clipping Magic Error: ${response.status} - ${errorText}`);
-        }
-
-        const resultBuffer = await response.arrayBuffer();
-        const resultBase64 = Buffer.from(resultBuffer).toString('base64');
-        return res.json({ image: `data:image/png;base64,${resultBase64}` });
-      } 
-      
       if (engine === 'iloveimg') {
-        const publicKey = process.env.ILOVE_API_PUBLIC_KEY;
-        const secretKey = process.env.ILOVE_API_SECRET_KEY;
+        const publicKey = req.body.publicKey || process.env.ILOVE_API_PUBLIC_KEY;
+        const secretKey = req.body.secretKey || process.env.ILOVE_API_SECRET_KEY;
 
         if (!publicKey || !secretKey) {
           return res.status(500).json({ error: "Configuração do iLoveIMG incompleta no servidor." });

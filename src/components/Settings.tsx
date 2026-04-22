@@ -25,30 +25,21 @@ export function Settings({ user, userData, userRole, appConfig, onNotify, theme,
   const [footerTeamName, setFooterTeamName] = useState(appConfig?.footerTeamName || 'Designa');
   const [pollinationsKey, setPollinationsKey] = useState('');
   const [pexelsKey, setPexelsKey] = useState('');
-  const [youcamKey, setYoucamKey] = useState('');
-  const [neroKey, setNeroKey] = useState('');
+  const [ilovePublicKey, setIlovePublicKey] = useState('');
+  const [iloveSecretKey, setIloveSecretKey] = useState('');
   const [dynaPicturesKey, setDynaPicturesKey] = useState('');
-  const [clippingMagicKey, setClippingMagicKey] = useState('');
   const [supabaseUrl, setSupabaseUrl] = useState('');
   const [supabaseAnonKey, setSupabaseAnonKey] = useState('');
   const [supabaseBucket, setSupabaseBucket] = useState('images');
-  const [pixlrClientId, setPixlrClientId] = useState('');
-  const [pixlrClientSecret, setPixlrClientSecret] = useState('');
   const [isKeySaved, setIsKeySaved] = useState(false);
-  const [isYouCamKeySaved, setIsYouCamKeySaved] = useState(false);
-  const [isNeroKeySaved, setIsNeroKeySaved] = useState(false);
+  const [isIloveSaved, setIsIloveSaved] = useState(false);
   const [isDynaPicturesKeySaved, setIsDynaPicturesKeySaved] = useState(false);
   const [isPexelsKeySaved, setIsPexelsKeySaved] = useState(false);
-  const [isClippingMagicKeySaved, setIsClippingMagicKeySaved] = useState(false);
-  const [isPixlrSaved, setIsPixlrSaved] = useState(false);
   const [isSupabaseSaved, setIsSupabaseSaved] = useState(false);
   const [showKey, setShowKey] = useState(false);
-  const [showYouCamKey, setShowYouCamKey] = useState(false);
-  const [showNeroKey, setShowNeroKey] = useState(false);
+  const [showIloveSecret, setShowIloveSecret] = useState(false);
   const [showDynaPicturesKey, setShowDynaPicturesKey] = useState(false);
   const [showPexelsKey, setShowPexelsKey] = useState(false);
-  const [showClippingMagicKey, setShowClippingMagicKey] = useState(false);
-  const [showPixlrSecret, setShowPixlrSecret] = useState(false);
   const [showSuccessOverlay, setShowSuccessOverlay] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
   const profilePhotoInputRef = useRef<HTMLInputElement>(null);
@@ -133,13 +124,14 @@ export function Settings({ user, userData, userRole, appConfig, onNotify, theme,
             setPollinationsKey(data.pollinationsKey);
             setIsKeySaved(true);
           }
-          if (data.youcamKey) {
-            setYoucamKey(data.youcamKey);
-            setIsYouCamKeySaved(true);
+          if (data.ilovePublicKey) {
+            setIlovePublicKey(data.ilovePublicKey);
           }
-          if (data.neroKey) {
-            setNeroKey(data.neroKey);
-            setIsNeroKeySaved(true);
+          if (data.iloveSecretKey) {
+            setIloveSecretKey(data.iloveSecretKey);
+          }
+          if (data.ilovePublicKey && data.iloveSecretKey) {
+            setIsIloveSaved(true);
           }
           if (data.dynaPicturesKey) {
             setDynaPicturesKey(data.dynaPicturesKey);
@@ -148,19 +140,6 @@ export function Settings({ user, userData, userRole, appConfig, onNotify, theme,
           if (data.pexelsKey) {
             setPexelsKey(data.pexelsKey);
             setIsPexelsKeySaved(true);
-          }
-          if (data.clippingMagicKey) {
-            setClippingMagicKey(data.clippingMagicKey);
-            setIsClippingMagicKeySaved(true);
-          }
-          if (data.pixlrClientId) {
-            setPixlrClientId(data.pixlrClientId);
-          }
-          if (data.pixlrClientSecret) {
-            setPixlrClientSecret(data.pixlrClientSecret);
-          }
-          if (data.pixlrClientId && data.pixlrClientSecret) {
-            setIsPixlrSaved(true);
           }
         }
 
@@ -278,21 +257,18 @@ export function Settings({ user, userData, userRole, appConfig, onNotify, theme,
     }
   };
 
-  const handleUpdateAIConfig = async (type: 'pollinations' | 'youcam' | 'nero' | 'clippingmagic' | 'dynapictures' | 'pexels' | 'pixlr') => {
+  const handleUpdateAIConfig = async (type: 'pollinations' | 'iloveimg' | 'dynapictures' | 'pexels') => {
     let keyToSave = '';
     if (type === 'pollinations') keyToSave = pollinationsKey;
-    else if (type === 'youcam') keyToSave = youcamKey;
-    else if (type === 'nero') keyToSave = neroKey;
-    else if (type === 'clippingmagic') keyToSave = clippingMagicKey;
-    else if (type === 'dynapictures') keyToSave = dynaPicturesKey;
-    else if (type === 'pexels') keyToSave = pexelsKey;
-    else if (type === 'pixlr') {
-      if (!pixlrClientId.trim() || !pixlrClientSecret.trim()) {
-        onNotify('Por favor, preencha o ID do Cliente e o Segredo da Pixlr.', 'warning');
+    else if (type === 'iloveimg') {
+      if (!ilovePublicKey.trim() || !iloveSecretKey.trim()) {
+        onNotify('Por favor, preencha a Chave Pública e o Segredo da iLoveIMG.', 'warning');
         return;
       }
-      keyToSave = 'PixlrConfigMatched'; // Special flag for the next logic block
+      keyToSave = 'ILoveConfigMatched';
     }
+    else if (type === 'dynapictures') keyToSave = dynaPicturesKey;
+    else if (type === 'pexels') keyToSave = pexelsKey;
 
     if (!keyToSave.trim()) return;
     
@@ -301,25 +277,19 @@ export function Settings({ user, userData, userRole, appConfig, onNotify, theme,
       const aiConfigRef = doc(db, 'config', 'ai');
       const updateData: any = {};
       if (type === 'pollinations') updateData.pollinationsKey = keyToSave.trim();
-      else if (type === 'youcam') updateData.youcamKey = keyToSave.trim();
-      else if (type === 'nero') updateData.neroKey = keyToSave.trim();
-      else if (type === 'clippingmagic') updateData.clippingMagicKey = keyToSave.trim();
+      else if (type === 'iloveimg') {
+        updateData.ilovePublicKey = ilovePublicKey.trim();
+        updateData.iloveSecretKey = iloveSecretKey.trim();
+      }
       else if (type === 'dynapictures') updateData.dynaPicturesKey = keyToSave.trim();
       else if (type === 'pexels') updateData.pexelsKey = keyToSave.trim();
-      else if (type === 'pixlr') {
-        updateData.pixlrClientId = pixlrClientId.trim();
-        updateData.pixlrClientSecret = pixlrClientSecret.trim();
-      }
       
       await setDoc(aiConfigRef, updateData, { merge: true });
       
       if (type === 'pollinations') setIsKeySaved(true);
-      else if (type === 'youcam') setIsYouCamKeySaved(true);
-      else if (type === 'nero') setIsNeroKeySaved(true);
-      else if (type === 'clippingmagic') setIsClippingMagicKeySaved(true);
+      else if (type === 'iloveimg') setIsIloveSaved(true);
       else if (type === 'dynapictures') setIsDynaPicturesKeySaved(true);
       else if (type === 'pexels') setIsPexelsKeySaved(true);
-      else if (type === 'pixlr') setIsPixlrSaved(true);
       
       onNotify(`Chave ${type.toUpperCase()} salva com sucesso!`, 'success');
       
@@ -589,184 +559,82 @@ export function Settings({ user, userData, userRole, appConfig, onNotify, theme,
 
               <div className="w-full h-px bg-slate-100 dark:bg-slate-800"></div>
 
-              <div className="space-y-2">
-                <label className="text-sm font-bold text-slate-700 dark:text-slate-300 flex items-center gap-2">
-                  <Shield size={16} className="text-orange-600" />
-                  Chave de API Nero AI
-                </label>
-                <p className="text-xs text-slate-500 mb-4">
-                  A Nero AI oferece modelos de ponta para upscale e restauração. 
-                  Obtenha sua chave no <a href="https://ai.nero.com/business/api" target="_blank" rel="noreferrer" className="text-orange-600 hover:underline">Nero AI API Portal</a>.
-                </p>
-                <div className="flex flex-col sm:flex-row gap-3">
-                  <div className="flex-1 relative">
-                    <input 
-                      type={showNeroKey ? "text" : "password"}
-                      value={isNeroKeySaved && !showNeroKey ? "••••••••••••••••" : neroKey}
-                      onChange={(e) => setNeroKey(e.target.value)}
-                      disabled={isNeroKeySaved}
-                      placeholder="Cole sua chave Nero AI aqui..."
-                      className={`w-full px-6 py-4 rounded-2xl bg-slate-50 dark:bg-slate-800 border transition-all font-mono text-sm focus:outline-none focus:ring-2 focus:ring-orange-500/50 pr-24 ${
-                        isNeroKeySaved 
-                          ? 'border-emerald-500/50 text-emerald-600 dark:text-emerald-400' 
-                          : 'border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white'
-                      }`}
-                    />
-                    <div className="absolute right-4 top-1/2 -translate-y-1/2 flex items-center gap-2">
-                      <button
-                        type="button"
-                        onClick={() => setShowNeroKey(!showNeroKey)}
-                        className="p-1.5 text-slate-400 hover:text-orange-600 transition-colors"
-                      >
-                        {showNeroKey ? <EyeOff size={18} /> : <Eye size={18} />}
-                      </button>
-                      {isNeroKeySaved && (
-                        <Check size={16} className="text-emerald-500" />
-                      )}
+              <div className="space-y-4">
+                <div className="flex items-center justify-between">
+                  <label className="text-sm font-bold text-slate-700 dark:text-slate-300 flex items-center gap-3">
+                    <div className="p-2 bg-indigo-50 dark:bg-indigo-900/30 text-indigo-600 rounded-xl">
+                      <RefreshCw size={18} />
                     </div>
-                  </div>
-                  
-                  {!isNeroKeySaved ? (
-                    <button 
-                      onClick={() => handleUpdateAIConfig('nero')}
-                      disabled={isSaving || !neroKey.trim()}
-                      className="px-8 py-4 bg-orange-600 hover:bg-orange-700 text-white font-black rounded-2xl transition-all disabled:opacity-50 shadow-lg shadow-orange-500/20"
-                    >
-                      Salvar Chave
-                    </button>
-                  ) : (
-                    <button 
-                      onClick={() => {
-                        setNeroKey('');
-                        setIsNeroKeySaved(false);
-                      }}
-                      className="px-8 py-4 bg-slate-200 dark:bg-slate-800 text-slate-600 dark:text-slate-300 font-black rounded-2xl hover:bg-slate-300 dark:hover:bg-slate-700 transition-all"
-                    >
-                      Alterar
-                    </button>
-                  )}
+                    Configurações iLoveIMG API (Remoção de Fundo Premium)
+                  </label>
+                  <a 
+                    href="https://developer.iloveimg.com/dashboard" 
+                    target="_blank" 
+                    rel="noopener noreferrer"
+                    className="text-[10px] font-bold text-indigo-600 hover:text-indigo-700 transition-colors uppercase tracking-widest bg-indigo-50 dark:bg-indigo-900/30 px-2 py-1 rounded"
+                  >
+                    Obter Chaves
+                  </a>
                 </div>
-              </div>
-
-              <div className="w-full h-px bg-slate-100 dark:bg-slate-800"></div>
-
-              <div className="space-y-2">
-                <label className="text-sm font-bold text-slate-700 dark:text-slate-300 flex items-center gap-2">
-                  <Maximize2 size={16} className="text-blue-600" />
-                  Chave de API Clipping Magic
-                </label>
-                <div className="flex flex-col sm:flex-row gap-3">
-                  <div className="flex-1 relative">
+                
+                <div className="space-y-3">
+                  <div className="relative">
                     <input 
-                      type={showClippingMagicKey ? "text" : "password"}
-                      value={isClippingMagicKeySaved && !showClippingMagicKey ? "••••••••••••••••" : clippingMagicKey}
-                      onChange={(e) => setClippingMagicKey(e.target.value)}
-                      disabled={isClippingMagicKeySaved}
-                      placeholder="Cole sua chave Clipping Magic aqui..."
-                      className={`w-full px-6 py-4 rounded-2xl bg-slate-50 dark:bg-slate-800 border transition-all font-mono text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/50 pr-24 ${
-                        isClippingMagicKeySaved 
-                          ? 'border-emerald-500/50 text-emerald-600 dark:text-emerald-400' 
+                      type="text"
+                      value={isIloveSaved ? "••••••••••••••••" : ilovePublicKey}
+                      onChange={(e) => setIlovePublicKey(e.target.value)}
+                      disabled={isIloveSaved}
+                      placeholder="Chave Pública iLoveIMG"
+                      className={`w-full px-6 py-4 rounded-2xl bg-slate-50 dark:bg-slate-800 border transition-all font-mono text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/50 ${
+                        isIloveSaved 
+                          ? 'border-emerald-500/50 text-emerald-600 dark:text-emerald-400 font-bold' 
                           : 'border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white'
                       }`}
                     />
-                    <div className="absolute right-4 top-1/2 -translate-y-1/2 flex items-center gap-2">
-                      <button
-                        type="button"
-                        onClick={() => setShowClippingMagicKey(!showClippingMagicKey)}
-                        className="p-1.5 text-slate-400 hover:text-blue-600 transition-colors"
-                      >
-                        {showClippingMagicKey ? <EyeOff size={18} /> : <Eye size={18} />}
-                      </button>
-                      {isClippingMagicKeySaved && (
-                        <Check size={16} className="text-emerald-500" />
-                      )}
-                    </div>
+                  </div>
+
+                  <div className="relative">
+                    <input 
+                      type={showIloveSecret ? "text" : "password"}
+                      value={isIloveSaved && !showIloveSecret ? "••••••••••••••••" : iloveSecretKey}
+                      onChange={(e) => setIloveSecretKey(e.target.value)}
+                      disabled={isIloveSaved}
+                      placeholder="Segredo da Chave iLoveIMG"
+                      className={`w-full px-6 py-4 rounded-2xl bg-slate-50 dark:bg-slate-800 border transition-all font-mono text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/50 pr-12 ${
+                        isIloveSaved 
+                          ? 'border-emerald-500/50 text-emerald-600 dark:text-emerald-400 font-bold' 
+                          : 'border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white'
+                      }`}
+                    />
+                    <button 
+                      type="button"
+                      onClick={() => setShowIloveSecret(!showIloveSecret)}
+                      className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 hover:text-indigo-500 transition-colors"
+                    >
+                      {showIloveSecret ? <EyeOff size={18} /> : <Eye size={18} />}
+                    </button>
                   </div>
                   
-                  {!isClippingMagicKeySaved ? (
+                  {!isIloveSaved ? (
                     <button 
-                      onClick={() => handleUpdateAIConfig('clippingmagic')}
-                      disabled={isSaving || !clippingMagicKey.trim()}
-                      className="px-8 py-4 bg-blue-600 hover:bg-blue-700 text-white font-black rounded-2xl transition-all disabled:opacity-50 shadow-lg shadow-blue-500/20"
+                      onClick={() => handleUpdateAIConfig('iloveimg')}
+                      disabled={isSaving || !ilovePublicKey.trim() || !iloveSecretKey.trim()}
+                      className="w-full py-4 bg-indigo-600 hover:bg-indigo-700 text-white font-black rounded-2xl transition-all disabled:opacity-50 shadow-lg shadow-indigo-500/20 flex items-center justify-center gap-2"
                     >
-                      Salvar Chave
+                      {isSaving ? <Loader2 size={18} className="animate-spin" /> : <Shield size={18} />}
+                      Salvar Chaves iLoveIMG
                     </button>
                   ) : (
                     <button 
                       onClick={() => {
-                        setClippingMagicKey('');
-                        setIsClippingMagicKeySaved(false);
+                        setIlovePublicKey('');
+                        setIloveSecretKey('');
+                        setIsIloveSaved(false);
                       }}
-                      className="px-8 py-4 bg-slate-200 dark:bg-slate-800 text-slate-600 dark:text-slate-300 font-black rounded-2xl hover:bg-slate-300 dark:hover:bg-slate-700 transition-all"
-                    >
-                      Alterar
-                    </button>
-                  )}
-                </div>
-              </div>
-
-              <div className="w-full h-px bg-slate-100 dark:bg-slate-800"></div>
-
-              <div className="space-y-2">
-                <label className="text-sm font-bold text-slate-700 dark:text-slate-300 flex items-center gap-2">
-                  <Sparkles size={16} className="text-purple-600" />
-                  Chave de API YouCam (Perfect Corp)
-                </label>
-                <p className="text-xs text-slate-500 mb-4">
-                  A YouCam oferece tecnologias líderes mundiais de Realidade Aumentada e IA para beleza e moda. 
-                  Obtenha sua chave no <a href="https://www.perfectcorp.com/business/solutions/ai-console" target="_blank" rel="noreferrer" className="text-purple-600 hover:underline">Perfect Corp AI Console</a>.
-                </p>
-                <div className="flex flex-col sm:flex-row gap-3">
-                  <div className="flex-1 relative">
-                    <input 
-                      type={showYouCamKey ? "text" : "password"}
-                      value={isYouCamKeySaved && !showYouCamKey ? "••••••••••••••••" : youcamKey}
-                      onChange={(e) => setYoucamKey(e.target.value)}
-                      disabled={isYouCamKeySaved}
-                      placeholder="Cole sua chave YouCam aqui..."
-                      className={`w-full px-6 py-4 rounded-2xl bg-slate-50 dark:bg-slate-800 border transition-all font-mono text-sm focus:outline-none focus:ring-2 focus:ring-purple-500/50 pr-24 ${
-                        isYouCamKeySaved 
-                          ? 'border-emerald-500/50 text-emerald-600 dark:text-emerald-400' 
-                          : 'border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white'
-                      }`}
-                    />
-                    <div className="absolute right-4 top-1/2 -translate-y-1/2 flex items-center gap-2">
-                      <button
-                        type="button"
-                        onClick={() => setShowYouCamKey(!showYouCamKey)}
-                        className="p-1.5 text-slate-400 hover:text-purple-600 transition-colors"
-                        title={showYouCamKey ? "Ocultar" : "Visualizar"}
-                      >
-                        {showYouCamKey ? <EyeOff size={18} /> : <Eye size={18} />}
-                      </button>
-                      {isYouCamKeySaved && (
-                        <>
-                          <Check size={16} className="text-emerald-500" />
-                          <span className="text-[10px] font-black text-emerald-500 uppercase tracking-widest hidden sm:inline">Protegida</span>
-                        </>
-                      )}
-                    </div>
-                  </div>
-                  
-                  {!isYouCamKeySaved ? (
-                    <button 
-                      onClick={() => handleUpdateAIConfig('youcam')}
-                      disabled={isSaving || !youcamKey.trim()}
-                      className="px-8 py-4 bg-purple-600 hover:bg-purple-700 text-white font-black rounded-2xl transition-all disabled:opacity-50 flex items-center justify-center gap-2 shadow-lg shadow-purple-500/20"
-                    >
-                      {isSaving ? <Loader2 size={18} className="animate-spin" /> : <Sparkles size={18} />}
-                      Salvar Chave
-                    </button>
-                  ) : (
-                    <button 
-                      onClick={() => {
-                        setYoucamKey('');
-                        setIsYouCamKeySaved(false);
-                      }}
-                      className="px-8 py-4 bg-slate-200 dark:bg-slate-800 text-slate-600 dark:text-slate-300 font-black rounded-2xl hover:bg-slate-300 dark:hover:bg-slate-700 transition-all flex items-center justify-center gap-2"
+                      className="w-full py-4 bg-slate-200 dark:bg-slate-800 text-slate-600 dark:text-slate-300 font-black rounded-2xl hover:bg-slate-300 dark:hover:bg-slate-700 transition-all flex items-center justify-center gap-2"
                     >
                       <RefreshCw size={18} />
-                      Alterar Chave
+                      Alterar Chaves
                     </button>
                   )}
                 </div>
@@ -907,86 +775,6 @@ export function Settings({ user, userData, userRole, appConfig, onNotify, theme,
                 </div>
               </div>
 
-              <div className="w-full h-px bg-slate-100 dark:bg-slate-800"></div>
-
-              <div className="space-y-4">
-                <div className="flex items-center justify-between">
-                  <label className="text-sm font-bold text-slate-700 dark:text-slate-300 flex items-center gap-2">
-                    <Maximize2 size={16} className="text-emerald-500" />
-                    Configurações Pixlr (Editor & Design)
-                  </label>
-                  <a 
-                    href="https://pixlr.com/developer/" 
-                    target="_blank" 
-                    rel="noopener noreferrer"
-                    className="text-[10px] font-bold text-indigo-600 hover:text-indigo-700 transition-colors uppercase tracking-widest bg-indigo-50 dark:bg-indigo-900/30 px-2 py-1 rounded"
-                  >
-                    Site Developer
-                  </a>
-                </div>
-                
-                <div className="space-y-3">
-                  <div className="relative">
-                    <input 
-                      type="text"
-                      value={isPixlrSaved ? "••••••••••••••••" : pixlrClientId}
-                      onChange={(e) => setPixlrClientId(e.target.value)}
-                      disabled={isPixlrSaved}
-                      placeholder="ID do Cliente Pixlr"
-                      className={`w-full px-6 py-4 rounded-2xl bg-slate-50 dark:bg-slate-800 border transition-all font-mono text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/50 ${
-                        isPixlrSaved 
-                          ? 'border-emerald-500/50 text-emerald-600 dark:text-emerald-400 font-bold' 
-                          : 'border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white'
-                      }`}
-                    />
-                  </div>
-
-                  <div className="relative">
-                    <input 
-                      type={showPixlrSecret ? "text" : "password"}
-                      value={isPixlrSaved && !showPixlrSecret ? "••••••••••••••••" : pixlrClientSecret}
-                      onChange={(e) => setPixlrClientSecret(e.target.value)}
-                      disabled={isPixlrSaved}
-                      placeholder="Segredo da Chave Pixlr"
-                      className={`w-full px-6 py-4 rounded-2xl bg-slate-50 dark:bg-slate-800 border transition-all font-mono text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/50 pr-12 ${
-                        isPixlrSaved 
-                          ? 'border-emerald-500/50 text-emerald-600 dark:text-emerald-400 font-bold' 
-                          : 'border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white'
-                      }`}
-                    />
-                    <button 
-                      type="button"
-                      onClick={() => setShowPixlrSecret(!showPixlrSecret)}
-                      className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 hover:text-emerald-500 transition-colors"
-                    >
-                      {showPixlrSecret ? <EyeOff size={18} /> : <Eye size={18} />}
-                    </button>
-                  </div>
-                  
-                  {!isPixlrSaved ? (
-                    <button 
-                      onClick={() => handleUpdateAIConfig('pixlr')}
-                      disabled={isSaving || !pixlrClientId.trim() || !pixlrClientSecret.trim()}
-                      className="w-full py-4 bg-emerald-600 hover:bg-emerald-700 text-white font-black rounded-2xl transition-all disabled:opacity-50 shadow-lg shadow-emerald-500/20 flex items-center justify-center gap-2"
-                    >
-                      {isSaving ? <Loader2 size={18} className="animate-spin" /> : <Shield size={18} />}
-                      Salvar Chaves Pixlr
-                    </button>
-                  ) : (
-                    <button 
-                      onClick={() => {
-                        setPixlrClientId('');
-                        setPixlrClientSecret('');
-                        setIsPixlrSaved(false);
-                      }}
-                      className="w-full py-4 bg-slate-200 dark:bg-slate-800 text-slate-600 dark:text-slate-300 font-black rounded-2xl hover:bg-slate-300 dark:hover:bg-slate-700 transition-all flex items-center justify-center gap-2"
-                    >
-                      <RefreshCw size={18} />
-                      Alterar Chaves
-                    </button>
-                  )}
-                </div>
-              </div>
             </div>
           </section>
         )}

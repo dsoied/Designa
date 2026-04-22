@@ -1,4 +1,4 @@
-import { ZoomIn, ZoomOut, Undo, Redo, Eraser, Brush, Download, Upload, RotateCcw, Sparkles, Layers, ImageIcon, AlignCenter, RefreshCw, Library, Zap, Wand2, Plus, Loader2, AlertCircle, X } from 'lucide-react';
+import { ZoomIn, ZoomOut, Undo, Redo, Eraser, Brush, Download, Upload, RotateCcw, Sparkles, Layers, ImageIcon, AlignCenter, RefreshCw, Library, Zap, Wand2, Plus, Loader2, AlertCircle, X, Trash2 } from 'lucide-react';
 import React, { useState, useEffect, useRef, ChangeEvent } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { db, auth, addDoc, collection, storage, ref, uploadString, getDownloadURL, serverTimestamp, uploadImageToStorage, handleFirestoreError, OperationType, doc, getDoc } from '../firebase';
@@ -9,34 +9,37 @@ import { PexelsBrowser } from './PexelsBrowser';
 interface EditorProps {
   imageUrl: string | null;
   onNavigate?: (screen: any, imageData?: string) => void;
-  initialTool?: 'background';
+  onRemoveImage?: () => void;
+  initialTool?: 'background' | 'templates' | 'stock' | 'ai_generate' | 'none';
   userRole?: string;
   notify?: (title: string, message: string, type?: 'success' | 'error' | 'info') => void;
 }
 
 import { trackImageProcessed } from '../services/analyticsService';
 import { generateImage, refinePrompt, refinePromptOptions } from '../services/geminiService';
+import { removeBackground } from '@imgly/background-removal';
 
-export function Editor({ imageUrl, onNavigate, initialTool = 'background', userRole, notify }: EditorProps) {
-  console.log('Editor: Renderizando. imageUrl:', imageUrl ? 'presente (tamanho: ' + imageUrl.length + ')' : 'ausente');
+export function Editor({ imageUrl, onNavigate, onRemoveImage, initialTool = 'none', userRole, notify }: EditorProps) {
+  console.log('Editor: Renderizando. imageUrl:', imageUrl ? 'presente (tamanho: ' + imageUrl.length + ')' : 'ausente', 'initialTool:', initialTool);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [brushSize, setBrushSize] = useState(24);
   const [sensitivity, setSensitivity] = useState(75);
   const [quality, setQuality] = useState(100);
   const [mode, setMode] = useState<'erase' | 'restore' | 'keep'>('erase');
-  const [activeTool, setActiveTool] = useState<'background' | 'templates' | 'stock' | 'ai_generate'>(initialTool as any);
+  const [activeTool, setActiveTool] = useState<'background' | 'templates' | 'stock' | 'ai_generate' | 'none'>(initialTool);
   const [aiPrompt, setAiPrompt] = useState('');
   const [aiAspectRatio, setAiAspectRatio] = useState<'1:1' | '4:3' | '16:9'>('1:1');
   const [refinementChoices, setRefinementChoices] = useState<string[]>([]);
   const [showRefinementModal, setShowRefinementModal] = useState(false);
   const [format, setFormat] = useState<'PNG' | 'JPG' | 'WebP'>('PNG');
   const [bgColor, setBgColor] = useState<string>('transparent');
-  const [bgEngine, setBgEngine] = useState<'clippingmagic' | 'iloveimg'>('clippingmagic');
+  const [bgEngine, setBgEngine] = useState<'browser' | 'iloveimg'>('browser');
+  const [ilovePublicKey, setIlovePublicKey] = useState<string>('');
+  const [iloveSecretKey, setIloveSecretKey] = useState<string>('');
   const [dynaPicturesKey, setDynaPicturesKey] = useState<string>('');
   const [pexelsKey, setPexelsKey] = useState<string>('');
   const [selectedDesignId, setSelectedDesignId] = useState<string>('');
   const [templateParams, setTemplateParams] = useState<Record<string, any>>({});
-  const [clippingMagicKey, setClippingMagicKey] = useState<string>('');
   const [availableDesigns, setAvailableDesigns] = useState<any[]>([]);
   const [isFetchingDesigns, setIsFetchingDesigns] = useState(false);
   const [refinement, setRefinement] = useState<'suave' | 'medio' | 'nitido'>('medio');
@@ -48,7 +51,8 @@ export function Editor({ imageUrl, onNavigate, initialTool = 'background', userR
         const snap = await getDoc(aiConfigRef);
         if (snap.exists()) {
           const data = snap.data();
-          if (data.clippingMagicKey) setClippingMagicKey(data.clippingMagicKey);
+          if (data.ilovePublicKey) setIlovePublicKey(data.ilovePublicKey);
+          if (data.iloveSecretKey) setIloveSecretKey(data.iloveSecretKey);
           if (data.dynaPicturesKey) setDynaPicturesKey(data.dynaPicturesKey);
           if (data.pexelsKey) setPexelsKey(data.pexelsKey);
         }
@@ -188,6 +192,12 @@ export function Editor({ imageUrl, onNavigate, initialTool = 'background', userR
       };
     }
   }, [displayImage]);
+
+  const handleClearImage = () => {
+    if (onRemoveImage) {
+      onRemoveImage();
+    }
+  };
 
   const handleZoom = () => {
     setZoom(prev => prev === 1 ? 1.5 : prev === 1.5 ? 2 : 1);
@@ -391,33 +401,58 @@ export function Editor({ imageUrl, onNavigate, initialTool = 'background', userR
         }
       }
 
-      // Logic for tools that use Clipping Magic
+      // Logic for tools that use Background Removal
       if (activeTool === 'background') {
-        if (bgEngine === 'clippingmagic') {
-          try {
-            console.log("Editor: Usando Clipping Magic...");
+        try {
+          if (bgEngine === 'browser') {
+            console.log("Editor: Usando Remoção de Fundo no Navegador (Local)...");
+            const blob = await removeBackground(displayImage);
+            const reader = new FileReader();
+            const resultUrl = await new Promise<string>((resolve) => {
+              reader.onload = () => resolve(reader.result as string);
+              reader.readAsDataURL(blob);
+            });
+
+            setProcessedImage(resultUrl);
+            setViewMode('compare');
+            addToHistory(resultUrl);
+            trackImageProcessed(activeTool);
+            
+            if (auth.currentUser) {
+              const fileName = `Designa_BG_${Date.now()}.png`;
+              const storageUrl = await uploadImageToStorage(resultUrl, fileName, `users/${auth.currentUser.uid}/projects`);
+              await addDoc(collection(db, 'projects'), {
+                uid: auth.currentUser.uid,
+                name: fileName,
+                date: new Date().toISOString().split('T')[0],
+                createdAt: serverTimestamp(),
+                status: 'Finalizado',
+                type: 'Remoção de Fundo (IA Local)',
+                imageUrl: storageUrl
+              });
+            }
+
+            setIsProcessing(false);
+            if (notify) notify('Sucesso', 'Fundo removido localmente com sucesso.', 'success');
+            return;
+          }
+
+          if (bgEngine === 'iloveimg') {
+            console.log("Editor: Usando iLoveIMG...");
             let response = await fetch("/api/remove-background", {
               method: "POST",
               headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ image: displayImage, test: false, engine: bgEngine })
+              body: JSON.stringify({ 
+                image: displayImage, 
+                engine: 'iloveimg',
+                publicKey: ilovePublicKey,
+                secretKey: iloveSecretKey
+              })
             });
-            
-            // If it fails with 402 (Payment Required), try test mode as fallback
-            if (response.status === 402 && bgEngine === 'clippingmagic') {
-              console.warn("Editor: Clipping Magic sem créditos, tentando modo teste...");
-              response = await fetch("/api/remove-background", {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ image: displayImage, test: true, engine: 'clippingmagic' })
-              });
-              if (response.ok && notify) {
-                notify('Modo Teste', 'Usando modo de teste do Clipping Magic (pode conter marca d\'água).', 'info');
-              }
-            }
 
             if (!response.ok) {
               const errData = await response.json();
-              throw new Error(errData.error || `Erro no Clipping Magic: ${response.status}`);
+              throw new Error(errData.error || `Erro no iLoveIMG: ${response.status}`);
             }
 
             const data = await response.json();
@@ -429,7 +464,7 @@ export function Editor({ imageUrl, onNavigate, initialTool = 'background', userR
                 trackImageProcessed(activeTool);
                 
                 if (auth.currentUser) {
-                  const fileName = `ClipMagic_${Date.now()}.png`;
+                  const fileName = `iLoveIMG_${Date.now()}.png`;
                   const storageUrl = await uploadImageToStorage(resultUrl, fileName, `users/${auth.currentUser.uid}/projects`);
                   await addDoc(collection(db, 'projects'), {
                     uid: auth.currentUser.uid,
@@ -437,22 +472,31 @@ export function Editor({ imageUrl, onNavigate, initialTool = 'background', userR
                     date: new Date().toISOString().split('T')[0],
                     createdAt: serverTimestamp(),
                     status: 'Finalizado',
-                    type: 'Remoção de Fundo (Clipping Magic)',
+                    type: 'Remoção de Fundo (iLoveIMG)',
                     imageUrl: storageUrl
                   });
                 }
 
                 setIsProcessing(false);
-                if (notify) notify('Sucesso', 'Fundo removido com Clipping Magic.', 'success');
+                if (notify) notify('Sucesso', 'Fundo removido com iLoveIMG.', 'success');
                 return;
               }
-          } catch (cmErr) {
-            console.error("Editor: Erro no Clipping Magic:", cmErr);
-            if (notify) notify('Erro Clipping Magic', 'Falha no processamento', 'error');
-            setIsProcessing(false);
-            return;
           }
+        } catch (bgErr) {
+          console.error("Editor: Erro na remoção de fundo:", bgErr);
+          setIsProcessing(false);
+          const errorMsg = bgErr instanceof Error ? bgErr.message : "Erro desconhecido";
+          
+          if (notify) notify('Erro', `Falha ao remover fundo: ${errorMsg}`, 'error');
+          return;
         }
+      }
+
+      // Handle case when no tool is active
+      if (activeTool === 'none' || !activeTool) {
+        if (notify) notify('Nenhuma Ferramenta Ativa', 'Selecione uma ferramenta na barra lateral para aplicar alterações.', 'info');
+        setIsProcessing(false);
+        return;
       }
 
       throw new Error("Esta ferramenta requer uma API dedicada configurada.");
@@ -761,11 +805,15 @@ export function Editor({ imageUrl, onNavigate, initialTool = 'background', userR
           <div>
             <h2 className="text-2xl md:text-3xl font-headline font-extrabold tracking-tight text-slate-900 dark:text-white">
               {activeTool === 'background' ? 'Remover Fundo' : 
-               activeTool === 'templates' ? 'Templates Dinâmicos' : 'Biblioteca Pexels'}
+               activeTool === 'ai_generate' ? 'Gerador de IA' :
+               activeTool === 'templates' ? 'Templates Dinâmicos' : 
+               activeTool === 'stock' ? 'Biblioteca Pexels' : 'Editor de Imagem'}
             </h2>
             <p className="text-slate-500 dark:text-slate-400 text-sm mt-1">
               {activeTool === 'background' ? 'Isole o objeto principal com precisão de IA.' : 
-               activeTool === 'templates' ? 'Crie artes incríveis com designs prontos.' : 'Busque milhões de fotos gratuitas de alta qualidade.'}
+               activeTool === 'templates' ? 'Crie artes incríveis com designs prontos.' : 
+               activeTool === 'ai_generate' ? 'Crie imagens a partir de descrições.' :
+               activeTool === 'stock' ? 'Busque milhões de fotos gratuitas de alta qualidade.' : 'Visualize e exporte sua criação.'}
             </p>
           </div>
           <div className="flex flex-wrap gap-2 w-full sm:w-auto">
@@ -983,6 +1031,18 @@ export function Editor({ imageUrl, onNavigate, initialTool = 'background', userR
             </motion.button>
             <div className="w-px h-6 bg-slate-200 dark:bg-slate-800 mx-0.5 md:mx-1"></div>
             <motion.button 
+              initial={{ backgroundColor: "rgba(255, 255, 255, 0)" }}
+              whileHover={{ scale: 1.1, backgroundColor: "rgba(254, 242, 242, 1)" }}
+              whileTap={{ scale: 0.9 }}
+              onClick={handleClearImage}
+              className="p-3 md:p-3 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-xl text-red-500 transition-all flex flex-col items-center gap-1"
+              title="Remover Imagem e Limpar Editor"
+            >
+              <Trash2 size={20} className="md:w-5 md:h-5" />
+              <span className="text-[8px] font-bold uppercase sm:hidden">Limpar</span>
+            </motion.button>
+            <div className="w-px h-6 bg-slate-200 dark:bg-slate-800 mx-0.5 md:mx-1"></div>
+            <motion.button 
               whileHover={!(isProcessing || !displayImage) ? { scale: 1.05, boxShadow: "0 20px 25px -5px rgb(79 70 229 / 0.4)" } : {}}
               whileTap={!(isProcessing || !displayImage) ? { scale: 0.95 } : {}}
               onClick={() => handleApplyChanges()}
@@ -1171,10 +1231,12 @@ export function Editor({ imageUrl, onNavigate, initialTool = 'background', userR
             {/* Background tool info */}
             {activeTool === 'background' && (
               <div className="flex items-center justify-center gap-2 p-3 bg-indigo-50 dark:bg-indigo-950/30 rounded-2xl border border-indigo-100 dark:border-indigo-900/50 mb-6">
-                <Layers size={16} className="text-indigo-600" />
+                <Zap size={16} className="text-indigo-600" />
                 <div className="flex flex-col">
                   <span className="text-[10px] font-black uppercase tracking-widest text-indigo-600 leading-none mb-1">Motor Ativo</span>
-                  <span className="text-[12px] font-bold text-slate-700 dark:text-slate-300 leading-none">Clipping Magic Pro</span>
+                  <span className="text-[12px] font-bold text-slate-700 dark:text-slate-300 leading-none">
+                    {bgEngine === 'browser' ? 'IA no Navegador (Local)' : 'iLoveIMG (Nuvem)'}
+                  </span>
                 </div>
               </div>
             )}
@@ -1392,9 +1454,12 @@ export function Editor({ imageUrl, onNavigate, initialTool = 'background', userR
           {/* Background Engine (Only for Background tool) */}
           {activeTool === 'background' && (
             <div className="space-y-4 mb-6">
-              <label className="text-xs font-black text-slate-500 uppercase tracking-widest">Motor de IA</label>
+              <label className="text-xs font-black text-slate-500 uppercase tracking-widest flex justify-between">
+                <span>Motor de IA</span>
+                <span className="text-[8px] text-indigo-500 normal-case">Recomendado: Navegador</span>
+              </label>
               <div className="grid grid-cols-2 gap-2 p-1 bg-slate-100 dark:bg-slate-800/50 rounded-2xl">
-                {(['clippingmagic', 'iloveimg'] as const).map((eng) => (
+                {(['browser', 'iloveimg'] as const).map((eng) => (
                   <button
                     key={eng}
                     onClick={() => setBgEngine(eng)}
@@ -1404,10 +1469,20 @@ export function Editor({ imageUrl, onNavigate, initialTool = 'background', userR
                         : 'text-slate-400 hover:text-slate-600 dark:hover:text-slate-300'
                     }`}
                   >
-                    {eng === 'clippingmagic' ? 'Clipping Magic' : 'iLoveIMG'}
+                    {eng === 'browser' ? 'Navegador (Livre)' : 'iLoveIMG (Nuvem)'}
                   </button>
                 ))}
               </div>
+              {bgEngine === 'browser' && (
+                <p className="text-[9px] text-slate-500 px-2 italic">
+                  O processamento é feito localmente no seu dispositivo. Não consome créditos.
+                </p>
+              )}
+              {bgEngine === 'iloveimg' && (
+                <p className="text-[9px] text-slate-500 px-2 italic">
+                  Requer conta em <a href="https://developer.iloveimg.com/" target="_blank" rel="noopener noreferrer" className="text-indigo-600 underline">developer.iloveimg.com</a>
+                </p>
+              )}
             </div>
           )}
 

@@ -1,4 +1,4 @@
-export type Screen = 'home' | 'editor' | 'history' | 'tools' | 'settings' | 'upload' | 'signup' | 'notifications' | 'batch' | 'admin' | 'generate' | 'terms' | 'privacy' | 'profile';
+export type Screen = 'home' | 'editor' | 'history' | 'tools' | 'settings' | 'upload' | 'signup' | 'notifications' | 'batch' | 'admin' | 'generate' | 'terms' | 'privacy' | 'profile' | 'collage';
 
 export interface Project {
   id: string;

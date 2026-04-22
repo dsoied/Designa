@@ -1,4 +1,4 @@
-import { Home, Upload, Layers, Eraser, Construction, History, Settings, Bell, User, Menu, X, Palette, LogOut, Crown, Shield, Sparkles, RefreshCw, Loader2, Wand2, Maximize2, ExternalLink, Sun, Moon } from 'lucide-react';
+import { Home, Upload, Layers, Eraser, Construction, History, Settings, Bell, User, Menu, X, Palette, LogOut, Crown, Shield, Sparkles, RefreshCw, Loader2, Wand2, Maximize2, ExternalLink, Sun, Moon, Grid2X2, MousePointer2 } from 'lucide-react';
 import { Screen, MonetizationSettings, AppConfig } from '../types';
 import { motion, AnimatePresence } from 'motion/react';
 import { useState, useEffect } from 'react';
@@ -10,7 +10,7 @@ import { useLanguage } from '../context/LanguageContext';
 
 interface SidebarProps {
   activeScreen: Screen;
-  onNavigate: (screen: Screen) => void;
+  onNavigate: (screen: Screen, imageData?: string, tool?: 'background' | 'templates' | 'stock' | 'ai_generate' | 'none') => void;
   isOpen: boolean;
   onClose: () => void;
   user: FirebaseUser | null;
@@ -27,6 +27,7 @@ export function Sidebar({ activeScreen, onNavigate, isOpen, onClose, user, userD
   const { t } = useLanguage();
   const navItems = [
     { id: 'home', label: t('home'), icon: Home },
+    { id: 'collage', label: 'Foto Colagem', icon: Grid2X2 },
     { id: 'generate', label: 'Criar com IA', icon: Sparkles },
     { id: 'upload', label: 'Carregar Imagem', icon: Upload },
     { id: 'editor', label: 'Remover Fundo', icon: Layers },
@@ -163,7 +164,7 @@ export function Sidebar({ activeScreen, onNavigate, isOpen, onClose, user, userD
 interface TopBarProps {
   activeScreen: Screen;
   onMenuClick: () => void;
-  onNavigate: (screen: Screen) => void;
+  onNavigate: (screen: Screen, imageData?: string, tool?: 'background' | 'templates' | 'stock' | 'ai_generate' | 'none') => void;
   user: FirebaseUser | null;
   userData?: any;
   userRole?: string;
@@ -192,6 +193,7 @@ export function TopBar({ activeScreen, onMenuClick, onNavigate, user, userData, 
     batch: 'Processamento em Lote',
     admin: t('admin'),
     generate: 'Criar com IA',
+    collage: 'Foto Colagem',
     terms: 'Termos e Condições',
     privacy: 'Política de Privacidade',
     profile: t('profile')

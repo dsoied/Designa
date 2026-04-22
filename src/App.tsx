@@ -12,6 +12,7 @@ import { UserProfile } from './components/UserProfile';
 import { CookieConsent } from './components/CookieConsent';
 import AdminDashboard from './components/AdminDashboard';
 import AIGenerator from './components/AIGenerator';
+import { CollageMaker } from './components/CollageMaker';
 import { LegalPage } from './components/LegalPage';
 import { Screen, Notification, MonetizationSettings, FooterSettings, AppConfig } from './types';
 import { motion, AnimatePresence } from 'motion/react';
@@ -51,6 +52,7 @@ export default function App() {
   const [appConfig, setAppConfig] = useState<AppConfig>({});
   const [monetization, setMonetization] = useState<MonetizationSettings | null>(null);
   const [footerSettings, setFooterSettings] = useState<FooterSettings | null>(null);
+  const [initialEditorTool, setInitialEditorTool] = useState<'background' | 'templates' | 'stock' | 'ai_generate' | 'none'>('background');
   const [theme, setTheme] = useState<'light' | 'dark'>(() => {
     if (typeof window !== 'undefined') {
       const saved = localStorage.getItem('designa_theme');
@@ -295,17 +297,28 @@ export default function App() {
     }
   }, [activeScreen]);
 
-  const handleNavigate = (screen: Screen, imageData?: string) => {
-    console.log(`App: Navegando para ${screen}. Imagem fornecida: ${imageData ? 'Sim (' + imageData.length + ' bytes)' : 'Não'}`);
+  const handleNavigate = (screen: Screen, imageData?: string, tool?: 'background' | 'templates' | 'stock' | 'ai_generate' | 'none') => {
+    console.log(`App: Navegando para ${screen}. Imagem fornecida: ${imageData ? 'Sim' : 'Não'}, Ferramenta: ${tool || 'Padrão'}`);
     if (imageData) {
       console.log('App: Atualizando selectedImage com novos dados');
       setSelectedImage(imageData);
       try {
         sessionStorage.setItem('designa_selected_image', imageData);
       } catch (e) {
-        console.warn('App: Falha ao salvar imagem no sessionStorage (provavelmente muito grande)');
+        console.warn('App: Falha ao salvar imagem no sessionStorage');
       }
     }
+    
+    if (tool) {
+      setInitialEditorTool(tool);
+    } else if (screen === 'editor' && !imageData) {
+      // Default to background for direct editor access
+      setInitialEditorTool('background');
+    } else if (screen === 'editor') {
+      // If we have image data but no tool specified, keep 'none' as default for a cleaner start
+      setInitialEditorTool('none');
+    }
+
     setActiveScreen(screen);
     try {
       sessionStorage.setItem('designa_active_screen', screen);
@@ -319,7 +332,21 @@ export default function App() {
       case 'upload':
         return <Home onNavigate={handleNavigate} selectedImage={selectedImage} userRole={userRole} appConfig={appConfig} monetization={monetization} footerSettings={footerSettings} notify={notify} />;
       case 'editor':
-        return <Editor imageUrl={selectedImage} onNavigate={handleNavigate} initialTool="background" userRole={userRole} notify={notify} />;
+        return (
+          <Editor 
+            imageUrl={selectedImage} 
+            onNavigate={handleNavigate} 
+            onRemoveImage={() => {
+              setSelectedImage(null);
+              sessionStorage.removeItem('designa_selected_image');
+              handleNavigate('home');
+              if (notify) notify('O editor foi limpo com sucesso.', 'info');
+            }}
+            initialTool={initialEditorTool} 
+            userRole={userRole} 
+            notify={notify} 
+          />
+        );
       case 'tools':
         return <Tools onNavigate={handleNavigate} selectedImage={selectedImage} monetization={monetization} userRole={userRole} />;
       case 'history':
@@ -346,6 +373,8 @@ export default function App() {
         return userRole === 'admin' ? <AdminDashboard /> : <Home onNavigate={handleNavigate} selectedImage={selectedImage} userRole={userRole} />;
       case 'generate':
         return <AIGenerator userRole={userRole} onNavigate={handleNavigate} />;
+      case 'collage':
+        return <CollageMaker onNavigate={handleNavigate} notify={notify} />;
       case 'profile':
         return <UserProfile onNavigate={handleNavigate} userRole={userRole} />;
       case 'terms':

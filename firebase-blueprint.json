@@ -139,9 +139,8 @@
       "description": "API keys and configuration for specialized AI services",
       "type": "object",
       "properties": {
-        "youcamKey": { "type": "string", "description": "YouCam AI API key" },
-        "clippingMagicKey": { "type": "string", "description": "Clipping Magic API key" },
-        "neroKey": { "type": "string", "description": "Nero AI API key" },
+        "ilovePublicKey": { "type": "string", "description": "iLoveIMG Public Key" },
+        "iloveSecretKey": { "type": "string", "description": "iLoveIMG Secret Key" },
         "dynaPicturesKey": { "type": "string", "description": "DynaPictures API key" },
         "pollinationsKey": { "type": "string", "description": "Pollinations AI API key" },
         "pexelsKey": { "type": "string", "description": "Pexels API key" }

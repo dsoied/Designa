@@ -13,7 +13,8 @@ import {
   Crown,
   RefreshCw,
   Maximize2,
-  ExternalLink
+  ExternalLink,
+  Grid2X2
 } from 'lucide-react';
 import { motion } from 'motion/react';
 import { Screen, MonetizationSettings } from '../types';
@@ -28,6 +29,14 @@ interface ToolsProps {
 }
 
 const allTools = [
+  {
+    id: 'collage',
+    name: 'Foto Colagem',
+    description: 'Crie composições artísticas combinando várias fotos em layouts incríveis.',
+    icon: Grid2X2,
+    color: 'bg-rose-500',
+    tag: 'Novo'
+  },
   {
     id: 'editor',
     name: 'Remover Fundo',

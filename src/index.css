@@ -1,3 +1,4 @@
+@import url('https://fonts.googleapis.com/css2?family=Poppins:wght@400;600;700&family=Montserrat:wght@400;600;700&display=swap');
 @import "tailwindcss";
 
 /* Habilita o modo escuro via classe .dark no Tailwind 4 */
@@ -6,6 +7,8 @@
 @theme {
   --font-manrope: "Manrope", ui-sans-serif, system-ui, sans-serif;
   --font-inter: "Inter", ui-sans-serif, system-ui, sans-serif;
+  --font-poppins: "Poppins", sans-serif;
+  --font-montserrat: "Montserrat", sans-serif;
 }
 
 @layer base {
