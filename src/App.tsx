@@ -13,6 +13,7 @@ import { CookieConsent } from './components/CookieConsent';
 import AdminDashboard from './components/AdminDashboard';
 import AIGenerator from './components/AIGenerator';
 import { CollageMaker } from './components/CollageMaker';
+import { PWAInstallPrompt } from './components/PWAInstallPrompt';
 import { LegalPage } from './components/LegalPage';
 import { Screen, Notification, MonetizationSettings, FooterSettings, AppConfig } from './types';
 import { motion, AnimatePresence } from 'motion/react';
@@ -464,6 +465,7 @@ export default function App() {
         </AnimatePresence>
       </main>
 
+      <PWAInstallPrompt onNotify={notify} />
       <CookieConsent />
     </div>
   );

@@ -90,6 +90,8 @@ export function SignUp({ onNavigate, appConfig, monetization }: SignUpProps) {
       }
       
       setIsSuccess(true);
+      // Mark for PWA prompt
+      sessionStorage.setItem('pwa_just_auth', 'true');
       setTimeout(() => {
         onNavigate('home');
       }, 2000);
@@ -119,6 +121,8 @@ export function SignUp({ onNavigate, appConfig, monetization }: SignUpProps) {
     try {
       await signInWithGoogle();
       setIsSuccess(true);
+      // Mark for PWA prompt
+      sessionStorage.setItem('pwa_just_auth', 'true');
       setTimeout(() => {
         onNavigate('home');
       }, 2000);
