@@ -170,6 +170,7 @@ export function History({ onNavigate, userRole, monetization }: HistoryProps) {
               className="bg-transparent text-sm font-bold text-slate-700 dark:text-slate-300 outline-none cursor-pointer"
             >
               <option value="all">Todos os Tipos</option>
+              <option value="collage">Design Studio</option>
               <option value="background">Remoção de Fundo</option>
               <option value="upscale">Melhoria de Qualidade</option>
               <option value="batch">Processamento em Lote</option>

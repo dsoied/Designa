@@ -364,7 +364,7 @@ export function Home({ onNavigate, selectedImage, userRole, appConfig, monetizat
               icon={Sparkles} 
               title="Gerar com IA" 
               description="Crie imagens incríveis do zero usando o novo Flash 2.5 da Google."
-              onClick={() => onNavigate('editor')}
+              onClick={() => onNavigate('generate')}
               tag="2.5 Flash"
             />
           </motion.div>

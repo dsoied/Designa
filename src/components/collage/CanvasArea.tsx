@@ -10,7 +10,7 @@ interface CanvasAreaProps {
   selectedIds: string[];
   dimensions: { width: number; height: number };
   editingId?: string | null;
-  onSelect: (ids: string[]) => void;
+  onSelect: (ids: string[], isEditing?: boolean) => void;
   onUpdate: (id: string, attrs: Partial<CanvasElement>) => void;
   stageRef: React.RefObject<any>;
   onContextMenu?: (e: any) => void;
@@ -23,6 +23,18 @@ export const CanvasArea = ({ elements, config, selectedIds, dimensions, onSelect
   const [selectionRect, setSelectionRect] = useState({ x1: 0, y1: 0, x2: 0, y2: 0, visible: false });
   const dragStartPos = useRef<Record<string, { x: number, y: number }>>({});
   const nodeStartPos = useRef<Record<string, { x: number, y: number }>>({});
+
+  const handleSelect = (id: string, shiftKey: boolean, isEditing = false) => {
+    if (shiftKey) {
+      if (selectedIds.includes(id)) {
+        onSelect(selectedIds.filter((sid) => sid !== id), isEditing);
+      } else {
+        onSelect([...selectedIds, id], isEditing);
+      }
+    } else {
+      onSelect([id], isEditing);
+    }
+  };
 
   // Design scaling and centering logic
   const baseScale = Math.min(
@@ -471,9 +483,9 @@ export const CanvasArea = ({ elements, config, selectedIds, dimensions, onSelect
         onDragEnd={handleDragEnd}
         ref={shapeRef}
         id={item.id}
-        onClick={(e) => onSelect(e.evt.shiftKey, false)}
-        onTap={(e) => onSelect(e.evt.shiftKey, false)}
-        onDblClick={(e) => onSelect(e.evt.shiftKey, true)}
+        onClick={(e) => handleSelect(item.id, e.evt.shiftKey, false)}
+        onTap={(e) => handleSelect(item.id, e.evt.shiftKey, false)}
+        onDblClick={(e) => handleSelect(item.id, e.evt.shiftKey, true)}
         onTransform={(e) => {
           const node = shapeRef.current;
           const scaleX = node.scaleX();
@@ -541,89 +553,27 @@ export const CanvasArea = ({ elements, config, selectedIds, dimensions, onSelect
           />
 
           {elements.map((el) => {
-          const isSelected = selectedIds.includes(el.id);
-          const isEditing = editingId === el.id;
-          const onChange = (attrs: any) => onUpdate(el.id, attrs);
+            const isSelected = selectedIds.includes(el.id);
+            const isEditing = editingId === el.id;
+            const onChange = (attrs: any) => onUpdate(el.id, attrs);
+            const commonProps = {
+              key: el.id,
+              item: el,
+              isSelected,
+              isEditing,
+              onChange,
+              onSelect: (isShift: boolean, shouldEdit: boolean = false) => handleSelect(el.id, isShift, shouldEdit)
+            };
 
-          if (el.type === 'image') {
-            return (
-              <ElementImage
-                key={el.id}
-                item={el}
-                isSelected={isSelected}
-                isEditing={isEditing}
-                onChange={onChange}
-                onSelect={(isShift: boolean) => {
-                  if (isShift) {
-                    onSelect(selectedIds.includes(el.id) ? selectedIds.filter(id => id !== el.id) : [...selectedIds, el.id]);
-                  } else {
-                    onSelect([el.id]);
-                  }
-                }}
-              />
-            );
-          }
-
-          if (el.type === 'frame') {
-            return (
-              <ElementFrame
-                key={el.id}
-                item={el}
-                isSelected={isSelected}
-                isEditing={isEditing}
-                onChange={onChange}
-                onSelect={(isShift: boolean) => {
-                  if (isShift) {
-                    onSelect(selectedIds.includes(el.id) ? selectedIds.filter(id => id !== el.id) : [...selectedIds, el.id]);
-                  } else {
-                    onSelect([el.id]);
-                  }
-                }}
-              />
-            );
-          }
-
-          if (el.type === 'rect') {
-            return <ElementRect key={el.id} item={el} isSelected={isSelected} onChange={onChange} onSelect={(isShift: boolean) => isShift ? onSelect(selectedIds.includes(el.id) ? selectedIds.filter(id => id !== el.id) : [...selectedIds, el.id]) : onSelect([el.id])} />;
-          }
-
-          if (el.type === 'circle') {
-            return <ElementCircle key={el.id} item={el} isSelected={isSelected} onChange={onChange} onSelect={(isShift: boolean) => isShift ? onSelect(selectedIds.includes(el.id) ? selectedIds.filter(id => id !== el.id) : [...selectedIds, el.id]) : onSelect([el.id])} />;
-          }
-
-          if (el.type === 'triangle') {
-            return <ElementTriangle key={el.id} item={el} isSelected={isSelected} onChange={onChange} onSelect={(isShift: boolean) => isShift ? onSelect(selectedIds.includes(el.id) ? selectedIds.filter(id => id !== el.id) : [...selectedIds, el.id]) : onSelect([el.id])} />;
-          }
-
-          if (el.type === 'line') {
-            return <ElementLine key={el.id} item={el} isSelected={isSelected} onChange={onChange} onSelect={(isShift: boolean) => isShift ? onSelect(selectedIds.includes(el.id) ? selectedIds.filter(id => id !== el.id) : [...selectedIds, el.id]) : onSelect([el.id])} />;
-          }
-
-          if (el.type === 'text') {
-            return (
-              <ElementText
-                key={el.id}
-                item={el}
-                isSelected={isSelected}
-                isEditing={isEditing}
-                onChange={onChange}
-                onSelect={(isShift: boolean, shouldEdit: boolean = false) => {
-                  if (shouldEdit) {
-                    (window as any).__triggerTextEdit && (window as any).__triggerTextEdit(el.id);
-                    return;
-                  }
-                  if (isShift) {
-                    onSelect(selectedIds.includes(el.id) ? selectedIds.filter(id => id !== el.id) : [...selectedIds, el.id]);
-                  } else {
-                    onSelect([el.id]);
-                  }
-                }}
-              />
-            );
-          }
-
-          return null;
-        })}
+            if (el.type === 'image') return <ElementImage {...commonProps} />;
+            if (el.type === 'frame') return <ElementFrame {...commonProps} />;
+            if (el.type === 'rect') return <ElementRect {...commonProps} />;
+            if (el.type === 'circle') return <ElementCircle {...commonProps} />;
+            if (el.type === 'triangle') return <ElementTriangle {...commonProps} />;
+            if (el.type === 'line') return <ElementLine {...commonProps} />;
+            if (el.type === 'text') return <ElementText {...commonProps} />;
+            return null;
+          })}
         {/* Selection Rect */}
         {selectionRect.visible && (
           <Rect

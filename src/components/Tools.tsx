@@ -31,7 +31,7 @@ interface ToolsProps {
 const allTools = [
   {
     id: 'collage',
-    name: 'Foto Colagem',
+    name: 'Design Studio',
     description: 'Crie composições artísticas combinando várias fotos em layouts incríveis.',
     icon: Grid2X2,
     color: 'bg-rose-500',

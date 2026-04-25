@@ -1117,7 +1117,17 @@ export function CollageEditor({ onNavigate, notify }: CollageEditorProps) {
                 selectedIds={selectedIds}
                 dimensions={dimensions}
                 editingId={editingTextId}
-                onSelect={setSelectedIds}
+                onSelect={(ids, isEditing) => {
+                  setSelectedIds(ids);
+                  if (isEditing && ids.length === 1) {
+                    const el = elements.find(e => e.id === ids[0]);
+                    if (el?.type === 'text') {
+                      setEditingTextId(ids[0]);
+                    }
+                  } else if (!isEditing) {
+                    setEditingTextId(null);
+                  }
+                }}
                 onUpdate={(id, attrs) => {
                   handleUpdate(id, attrs, true);
                 }}

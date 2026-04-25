@@ -84,37 +84,59 @@ export const generateImage = async (
 
 /**
  * Refines a base prompt into 3 professional options.
+ * Prioritizes Pollinations as requested by the user, with Gemini as a secondary fallback.
  */
 export const refinePromptOptions = async (prompt: string): Promise<string[]> => {
-  const client = getGeminiClient();
-  
+  // Strategy: Try Pollinations first as requested by the user to avoid Vercel/Gemini API issues.
   try {
+    const systemPrompt = "You are a prompt engineer. Refine the user input into 3 professional, detailed image generation prompts in English. Return ONLY a JSON array of 3 strings. Each string should be a full prompt. Do not include markdown formatting or extra text.";
+    const userPrompt = `Refine this draft prompt for image generation: "${prompt}"`;
+    
+    const response = await fetch('https://text.pollinations.ai/', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        messages: [
+          { role: 'system', content: systemPrompt },
+          { role: 'user', content: userPrompt }
+        ],
+        jsonMode: true,
+        seed: Math.floor(Math.random() * 1000)
+      })
+    });
+
+    if (response.ok) {
+      const text = await response.text();
+      // Handle potential extra text from LLM
+      const jsonMatch = text.match(/\[.*\]/s);
+      if (jsonMatch) {
+        return JSON.parse(jsonMatch[0]);
+      }
+    }
+  } catch (err) {
+    console.warn("GeminiService: Falha no Pollinations, tentando Gemini...", err);
+  }
+
+  // Secondary Fallback to Gemini
+  try {
+    const client = getGeminiClient();
     const response = await client.models.generateContent({
       model: "gemini-3-flash-preview",
       contents: `Analise este rascunho de prompt para geração de imagens: "${prompt}". 
       Crie TRÊS versões profissionais, detalhadas e distintas em INGLÊS. 
-      Cada versão deve focar em um estilo diferente (Ex: Realista, Artístico/Surreal, Cinematográfico).
-      
-      Importante: Responda APENAS um array JSON contendo as 3 strings. 
-      Exemplo de formato: ["prompt 1...", "prompt 2...", "prompt 3..."]`,
+      Responda APENAS um array JSON contendo as 3 strings.`,
     });
 
     const text = response.text?.trim() || "";
-    try {
-      // Look for JSON array in the response
-      const jsonMatch = text.match(/\[.*\]/s);
-      if (jsonMatch) {
-         return JSON.parse(jsonMatch[0]);
-      }
-      return [text, text, text];
-    } catch (e) {
-      console.warn("GeminiService: Falha ao parsear JSON de refinamento, retornando texto bruto.");
-      return [text, text, text];
+    const jsonMatch = text.match(/\[.*\]/s);
+    if (jsonMatch) {
+       return JSON.parse(jsonMatch[0]);
     }
   } catch (error) {
     console.error("GeminiService: Erro ao refinar prompt:", error);
-    return [prompt, prompt, prompt];
   }
+
+  return [prompt, prompt, prompt];
 };
 
 /**
